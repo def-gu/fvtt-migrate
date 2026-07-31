@@ -11,7 +11,11 @@ Early development. Only `scan` is implemented.
 
 ## Usage
 
-    fvtt-migrate scan --root /path/to/FoundryVTT/Data
+    fvtt-migrate scan --root /path/to/foundryuserdata [--core /path/to/foundryvtt]
+
+`--root` is the directory holding `Config` and `Data`. `--core` points at the
+Foundry application itself; without it, references to built-in assets are
+recognised by prefix rather than by checking that the file exists.
 
 ## Building
 
