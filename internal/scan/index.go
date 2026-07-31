@@ -23,13 +23,10 @@ type Index struct {
 	lower map[string]string
 	core  map[string]bool
 
-	// Set when the Foundry application directory was not supplied, so that
-	// references into it are recognised by prefix instead of by existence.
 	coreByPrefix bool
 }
 
-// corePrefixes are the top-level directories Foundry ships inside its
-// application bundle. Nothing under them is ever transferred.
+// Shipped inside the Foundry application; never transferred.
 var corePrefixes = map[string]bool{
 	"icons": true, "sounds": true, "ui": true, "fonts": true,
 	"cards": true, "canvas": true, "nue": true, "toolclips": true, "tours": true,

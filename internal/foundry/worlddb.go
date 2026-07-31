@@ -20,10 +20,8 @@ type Document struct {
 // fog stores explored-area bitmaps as data URIs and never references a file.
 var skipCollections = map[string]bool{"fog": true}
 
-// EachDocument walks every document of a world, including embedded ones, which
-// live under keys of the form !scenes.tokens!<sceneId>.<tokenId>.
-//
-// Data is only valid for the duration of the callback.
+// Embedded documents live under keys of the form !scenes.tokens!<id>.<id> and
+// are walked too. Data is only valid for the duration of the callback.
 func EachDocument(worldDir string, fn func(Document) error) error {
 	dataDir := filepath.Join(worldDir, "data")
 	entries, err := os.ReadDir(dataDir)

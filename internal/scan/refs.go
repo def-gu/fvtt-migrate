@@ -35,8 +35,6 @@ var (
 // settings store multi-megabyte data URIs that cannot contain a file path.
 const maxScalarLen = 1 << 20
 
-// FromDocument reports every asset path referenced by a single stored document.
-// External URLs and data URIs are skipped.
 func FromDocument(data []byte, sink func(Ref)) error {
 	var v any
 	if err := json.Unmarshal(data, &v); err != nil {
@@ -81,8 +79,6 @@ func scanScalar(s, where string, sink func(Ref)) {
 	}
 }
 
-// normalize turns a stored reference into a slash-separated path relative to a
-// content root, or reports false if it is not a local asset reference.
 func normalize(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" || len(s) > 2048 {

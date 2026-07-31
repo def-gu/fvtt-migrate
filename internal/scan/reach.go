@@ -10,12 +10,10 @@ import (
 type Class int
 
 const (
-	// Referenced files are reachable from a document in some world.
 	Referenced Class = iota
-	// Packaged files sit inside a module or system directory. They move with
-	// their package because modules load assets in ways no static scan sees.
+	// Packaged files move with their package: modules load assets in ways no
+	// static scan sees, so their directories are never analysed.
 	Packaged
-	// Orphan files live in user upload directories with nothing pointing at them.
 	Orphan
 )
 
@@ -43,9 +41,8 @@ type Summary struct {
 	UniqueRefs   int
 }
 
-// Renamed reports directories holding orphaned files that broken references
-// also point into. That combination means paths went stale, not that the files
-// are junk: skipping them would migrate a world with broken scenes.
+// Orphans plus broken references into the same directory mean stale paths,
+// not unused files: skipping them would migrate a world with broken scenes.
 func (s *Summary) Renamed() []string {
 	// Broken references under these are missing packages, a different fault.
 	namespaces := map[string]bool{"modules": true, "systems": true, "worlds": true}

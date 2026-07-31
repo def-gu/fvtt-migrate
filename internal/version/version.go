@@ -11,9 +11,8 @@ const (
 	Unknown      Verdict = "unknown"
 )
 
-// Parse reads a Foundry version into numeric components. It tolerates a "v"
-// prefix, trailing pre-release text and any number of components, none of which
-// the manifest schema forbids and all of which occur in practice.
+// A "v" prefix, pre-release suffixes and any component count all occur in
+// published manifests, so none of them may be rejected.
 func Parse(s string) []int {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(strings.TrimPrefix(s, "v"), "V")
@@ -43,9 +42,8 @@ func Compare(a, b string) int {
 	return compare(Parse(a), Parse(b))
 }
 
-// CompareBound compares a version against a declared bound at the bound's own
-// precision. Manifests write `"verified": "13"` to mean the whole v13
-// generation, so 13.351 must read as equal to it rather than greater.
+// Manifests write `"verified": "13"` to mean the whole v13 generation, so a
+// bound is compared at its own precision and 13.351 reads as equal to it.
 func CompareBound(v, bound string) int {
 	pv, pb := Parse(v), Parse(bound)
 	if len(pb) == 0 {
@@ -78,7 +76,6 @@ func at(s []int, i int) int {
 	return 0
 }
 
-// Check reports how a package declaring these bounds relates to a core version.
 func Check(minimum, verified, maximum, core string) Verdict {
 	if core == "" {
 		return Unknown
