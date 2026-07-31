@@ -44,3 +44,34 @@ func TestRealInstall(t *testing.T) {
 	}
 	t.Logf("modules without manifest=%d without version=%d", noManifest, noVersion)
 }
+
+func TestRealInstallDocuments(t *testing.T) {
+	root := os.Getenv("FVTT_ROOT")
+	if root == "" {
+		t.Skip("FVTT_ROOT not set")
+	}
+
+	inst, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := inst.Inventory()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, w := range inv.Worlds {
+		perNamespace := map[string]int{}
+		total := 0
+		err := EachDocument(w.Dir, func(d Document) error {
+			perNamespace[d.Namespace]++
+			total++
+			return nil
+		})
+		if err != nil {
+			t.Errorf("%s: %v", w.ID, err)
+			continue
+		}
+		t.Logf("%-34s docs=%-6d namespaces=%d", w.ID, total, len(perNamespace))
+	}
+}
