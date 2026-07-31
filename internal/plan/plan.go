@@ -76,7 +76,7 @@ func Build(inst *foundry.Install, inv *foundry.Inventory, sum *scan.Summary, tar
 			Root:        inst.Root,
 			OS:          runtime.GOOS,
 			TargetCore:  targetCore,
-			PackageMode: Pin,
+			PackageMode: PolicyPin,
 		},
 		Packages: ResolvePackages(inv, targetCore, cache),
 		Assets: Assets{

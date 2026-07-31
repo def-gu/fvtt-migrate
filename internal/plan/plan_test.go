@@ -87,7 +87,7 @@ func TestRoundTrip(t *testing.T) {
 	if back.FormatVersion != p.FormatVersion || len(back.Worlds) != len(p.Worlds) {
 		t.Fatalf("round trip lost data: %+v", back)
 	}
-	if back.Source.PackageMode != Pin {
+	if back.Source.PackageMode != PolicyPin {
 		t.Errorf("package policy = %q, want pin", back.Source.PackageMode)
 	}
 	if back.Assets.Referenced.Bytes != 1000 {

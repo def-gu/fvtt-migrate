@@ -87,8 +87,8 @@ func TestPremiumIsNeverShared(t *testing.T) {
 
 func TestDefaultPolicyIsPin(t *testing.T) {
 	inv := &foundry.Inventory{Modules: []foundry.Package{module("m", "1.0.0", str("https://x"), "")}}
-	if got := ResolvePackages(inv, "13.351", nil)[0].Policy; got != Pin {
-		t.Errorf("policy = %q, want %q", got, Pin)
+	if got := ResolvePackages(inv, "13.351", nil)[0].Policy; got != PolicyPin {
+		t.Errorf("policy = %q, want %q", got, PolicyPin)
 	}
 }
 

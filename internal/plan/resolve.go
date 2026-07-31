@@ -22,9 +22,9 @@ const (
 type Policy string
 
 const (
-	Pin     Policy = "pin"
-	Upgrade Policy = "upgrade"
-	Latest  Policy = "latest"
+	PolicyPin     Policy = "pin"
+	PolicyUpgrade Policy = "upgrade"
+	PolicyLatest  Policy = "latest"
 )
 
 type Package struct {
@@ -68,7 +68,7 @@ func resolveOne(p foundry.Package, coreVersion string, cache Cache) Package {
 		ID:      p.ID,
 		Kind:    string(p.Kind),
 		Version: p.Version,
-		Policy:  Pin,
+		Policy:  PolicyPin,
 		Premium: premium,
 		Compat:  string(version.Check(p.Compat.Minimum, p.Compat.Verified, p.Compat.Maximum, coreVersion)),
 		Shared:  !premium && p.Manifest != "",
