@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Kind string
@@ -30,6 +31,11 @@ type Package struct {
 	Manifest string
 	Download string
 	Compat   Compatibility
+
+	// DeclaresManifest distinguishes a manifest field left deliberately empty,
+	// which is how Foundry marks premium content delivered through the user's
+	// account, from one that was never written, which means local development.
+	DeclaresManifest bool
 
 	System        string
 	SystemVersion string
@@ -82,7 +88,7 @@ type rawManifest struct {
 	Name     string    `json:"name"`
 	Title    string    `json:"title"`
 	Version  laxString `json:"version"`
-	Manifest string    `json:"manifest"`
+	Manifest *string   `json:"manifest"`
 	Download string    `json:"download"`
 
 	Compatibility         *rawCompat `json:"compatibility"`
@@ -173,19 +179,25 @@ func readPackage(kind Kind, dir string) (*Package, error) {
 		id = filepath.Base(dir)
 	}
 
+	manifest := ""
+	if m.Manifest != nil {
+		manifest = strings.TrimSpace(*m.Manifest)
+	}
+
 	return &Package{
-		Kind:          kind,
-		ID:            id,
-		Title:         m.Title,
-		Version:       string(m.Version),
-		Dir:           dir,
-		Manifest:      m.Manifest,
-		Download:      m.Download,
-		Compat:        m.compat(),
-		System:        m.System,
-		SystemVersion: string(m.SystemVersion),
-		CoreVersion:   string(m.CoreVersion),
-		Background:    m.Background,
+		Kind:             kind,
+		ID:               id,
+		Title:            m.Title,
+		Version:          string(m.Version),
+		Dir:              dir,
+		Manifest:         manifest,
+		DeclaresManifest: m.Manifest != nil,
+		Download:         m.Download,
+		Compat:           m.compat(),
+		System:           m.System,
+		SystemVersion:    string(m.SystemVersion),
+		CoreVersion:      string(m.CoreVersion),
+		Background:       m.Background,
 	}, nil
 }
 
