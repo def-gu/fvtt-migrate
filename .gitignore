@@ -1,0 +1,4 @@
+/dist/
+/fvtt-migrate
+*.log
+plan.yaml
