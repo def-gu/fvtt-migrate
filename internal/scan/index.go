@@ -22,6 +22,17 @@ type Index struct {
 	data  map[string]int64
 	lower map[string]string
 	core  map[string]bool
+
+	// Set when the Foundry application directory was not supplied, so that
+	// references into it are recognised by prefix instead of by existence.
+	coreByPrefix bool
+}
+
+// corePrefixes are the top-level directories Foundry ships inside its
+// application bundle. Nothing under them is ever transferred.
+var corePrefixes = map[string]bool{
+	"icons": true, "sounds": true, "ui": true, "fonts": true,
+	"cards": true, "canvas": true, "nue": true, "toolclips": true, "tours": true,
 }
 
 // skipDirs are never asset storage: world databases hold documents, and
@@ -42,12 +53,14 @@ func Build(dataDir, coreDir string) (*Index, error) {
 		return nil, err
 	}
 
-	if coreDir != "" {
-		if err := walkFiles(coreDir, func(rel string, _ int64) {
-			ix.core[rel] = true
-		}); err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
+	if coreDir == "" {
+		ix.coreByPrefix = true
+		return ix, nil
+	}
+	if err := walkFiles(coreDir, func(rel string, _ int64) {
+		ix.core[rel] = true
+	}); err != nil && !os.IsNotExist(err) {
+		return nil, err
 	}
 	return ix, nil
 }
@@ -95,10 +108,20 @@ func (ix *Index) Lookup(p string) (Location, int64) {
 	if ix.core[p] {
 		return InCore, 0
 	}
+	if ix.coreByPrefix && corePrefixes[topSegment(p)] {
+		return InCore, 0
+	}
 	if canonical, ok := ix.lower[strings.ToLower(p)]; ok {
 		return CaseMismatch, ix.data[canonical]
 	}
 	return NotFound, 0
+}
+
+func topSegment(p string) string {
+	if i := strings.Index(p, "/"); i >= 0 {
+		return p[:i]
+	}
+	return p
 }
 
 func (ix *Index) Each(fn func(rel string, size int64)) {
