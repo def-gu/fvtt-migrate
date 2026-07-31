@@ -7,39 +7,61 @@ import (
 	"sort"
 
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
+	"github.com/def-gu/fvtt-migrate/internal/plan"
 	"github.com/def-gu/fvtt-migrate/internal/scan"
 )
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "scan" {
-		fmt.Fprintln(os.Stderr, "usage: fvtt-migrate scan --root <FoundryVTT user data> [--core <application dir>]")
-		os.Exit(2)
+	if len(os.Args) < 2 {
+		usage()
 	}
 
-	fs := flag.NewFlagSet("scan", flag.ExitOnError)
+	cmd := os.Args[1]
+	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	root := fs.String("root", "", "Foundry user-data directory (the one holding Config and Data)")
 	core := fs.String("core", "", "Foundry application directory, to recognise built-in assets")
 	limit := fs.Int("limit", 10, "how many entries to show in each list")
-	fs.Parse(os.Args[2:])
+	out := fs.String("out", "plan.yaml", "where to write the plan")
+	targetCore := fs.String("target-core", "", "Foundry version the plan targets (default: highest found)")
 
+	switch cmd {
+	case "scan", "plan":
+		fs.Parse(os.Args[2:])
+	default:
+		usage()
+	}
 	if *root == "" {
 		fs.Usage()
 		os.Exit(2)
 	}
-	if err := run(*root, *core, *limit); err != nil {
+
+	var err error
+	if cmd == "scan" {
+		err = runScan(*root, *core, *limit)
+	} else {
+		err = runPlan(*root, *core, *targetCore, *out)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(root, core string, limit int) error {
+func usage() {
+	fmt.Fprintln(os.Stderr, "usage:")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate scan --root <user data> [--core <application dir>]")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate plan --root <user data> [--core <application dir>] [--out plan.yaml]")
+	os.Exit(2)
+}
+
+func analyse(root, core string) (*foundry.Install, *foundry.Inventory, *scan.Index, *scan.Summary, error) {
 	inst, err := foundry.Open(root)
 	if err != nil {
-		return err
+		return nil, nil, nil, nil, err
 	}
 	inv, err := inst.Inventory()
 	if err != nil {
-		return err
+		return nil, nil, nil, nil, err
 	}
 
 	coreDir := ""
@@ -48,15 +70,64 @@ func run(root, core string, limit int) error {
 	}
 	ix, err := scan.Build(inst.Data, coreDir)
 	if err != nil {
-		return err
+		return nil, nil, nil, nil, err
 	}
 	sum, err := scan.Analyze(inv, ix)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return inst, inv, ix, sum, nil
+}
+
+func runScan(root, core string, limit int) error {
+	inst, inv, ix, sum, err := analyse(root, core)
+	if err != nil {
+		return err
+	}
+	report(inst, inv, ix, sum, limit)
+	return nil
+}
+
+func runPlan(root, core, targetCore, out string) error {
+	inst, inv, _, sum, err := analyse(root, core)
 	if err != nil {
 		return err
 	}
 
-	report(inst, inv, ix, sum, limit)
+	// Resolution runs offline: scan and plan never touch the network, so a
+	// cache hit cannot be claimed here.
+	p := plan.Build(inst, inv, sum, targetCore, nil)
+
+	f, err := os.Create(out)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := p.Write(f); err != nil {
+		return err
+	}
+
+	byPolicy := map[plan.Source]int{}
+	for _, pkg := range p.Packages {
+		byPolicy[pkg.Source]++
+	}
+	fmt.Printf("Wrote %s\n", out)
+	fmt.Printf("  target Foundry %s\n", p.Source.TargetCore)
+	fmt.Printf("  packages: %d fetchable by manifest, %d to upload\n",
+		byPolicy[plan.FromManifest], byPolicy[plan.FromUpload])
+	fmt.Printf("  worlds: %d included, %d blocked\n", countIncluded(p.Worlds), len(p.Worlds)-countIncluded(p.Worlds))
+	fmt.Println("\nReview and edit the plan before applying it. Nothing was modified.")
 	return nil
+}
+
+func countIncluded(ws []plan.World) int {
+	n := 0
+	for _, w := range ws {
+		if w.Include {
+			n++
+		}
+	}
+	return n
 }
 
 func report(inst *foundry.Install, inv *foundry.Inventory, ix *scan.Index, s *scan.Summary, limit int) {
