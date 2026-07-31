@@ -78,7 +78,7 @@ func Build(inst *foundry.Install, inv *foundry.Inventory, sum *scan.Summary, tar
 			TargetCore:  targetCore,
 			PackageMode: PolicyPin,
 		},
-		Packages: ResolvePackages(inv, targetCore, cache),
+		Packages: ResolvePackages(inv, targetCore, highestCore(inv), cache),
 		Assets: Assets{
 			Referenced: Bucket{sum.Referenced.Files, sum.Referenced.Bytes},
 			Packaged:   Bucket{sum.Packaged.Files, sum.Packaged.Bytes},

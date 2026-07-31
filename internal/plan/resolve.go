@@ -11,12 +11,9 @@ import (
 type Source string
 
 const (
-	// FromCache means the target already holds this exact package version.
-	FromCache Source = "server-cache"
-	// FromManifest means the target can fetch it itself, at the pinned version.
+	FromCache    Source = "server-cache"
 	FromManifest Source = "manifest"
-	// FromUpload means the bytes have to travel from this machine.
-	FromUpload Source = "upload"
+	FromUpload   Source = "upload"
 )
 
 type Policy string
@@ -33,24 +30,37 @@ type Package struct {
 	Version string `yaml:"version"`
 	Source  Source `yaml:"source"`
 	Reason  string `yaml:"reason,omitempty"`
-	Compat  string `yaml:"compat"`
 	Policy  Policy `yaml:"policy"`
 	Premium bool   `yaml:"premium,omitempty"`
-	Shared  bool   `yaml:"-"`
+
+	CompatDeclared  string         `yaml:"compat_declared"`
+	ObservedOn      string         `yaml:"observed_on,omitempty"`
+	Available       string         `yaml:"available,omitempty"`
+	CompatAvailable string         `yaml:"compat_available,omitempty"`
+	Recommend       Recommendation `yaml:"recommend"`
+	Widens          bool           `yaml:"widens_support,omitempty"`
+
+	Entitlement string `yaml:"entitled_by"`
+
+	// An optimisation, never an authorisation: entitlement is checked first and
+	// independently of where the bytes come from.
+	Shared bool `yaml:"-"`
 }
 
-// Cache answers whether a target already holds a package version. A nil Cache
-// resolves offline, which downgrades cache hits to their next best source.
+// Having had the package is the only basis on which it is ever handed back.
+const EntitledBySource = "present-in-source-install"
+
+// A nil Cache resolves offline: hits downgrade to their next best source.
 type Cache interface {
 	Has(kind, id, versionString string) bool
 }
 
-func ResolvePackages(inv *foundry.Inventory, coreVersion string, cache Cache) []Package {
+func ResolvePackages(inv *foundry.Inventory, targetCore, observedCore string, cache Cache) []Package {
 	pkgs := append(append([]foundry.Package{}, inv.Systems...), inv.Modules...)
 
 	out := make([]Package, 0, len(pkgs))
 	for _, p := range pkgs {
-		out = append(out, resolveOne(p, coreVersion, cache))
+		out = append(out, resolveOne(p, targetCore, observedCore, cache))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Kind != out[j].Kind {
@@ -61,17 +71,21 @@ func ResolvePackages(inv *foundry.Inventory, coreVersion string, cache Cache) []
 	return out
 }
 
-func resolveOne(p foundry.Package, coreVersion string, cache Cache) Package {
+func resolveOne(p foundry.Package, targetCore, observedCore string, cache Cache) Package {
 	premium := p.DeclaresManifest && p.Manifest == ""
+	declared := version.Check(p.Compat.Minimum, p.Compat.Verified, p.Compat.Maximum, targetCore)
 
 	r := Package{
-		ID:      p.ID,
-		Kind:    string(p.Kind),
-		Version: p.Version,
-		Policy:  PolicyPin,
-		Premium: premium,
-		Compat:  string(version.Check(p.Compat.Minimum, p.Compat.Verified, p.Compat.Maximum, coreVersion)),
-		Shared:  !premium && p.Manifest != "",
+		ID:             p.ID,
+		Kind:           string(p.Kind),
+		Version:        p.Version,
+		Policy:         PolicyPin,
+		Premium:        premium,
+		CompatDeclared: string(declared),
+		ObservedOn:     observedCore,
+		Recommend:      Recommend(declared, "", false),
+		Entitlement:    EntitledBySource,
+		Shared:         !premium && p.Manifest != "",
 	}
 
 	source, reason := chooseSource(p, premium, cache)

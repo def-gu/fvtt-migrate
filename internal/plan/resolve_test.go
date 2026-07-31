@@ -43,7 +43,7 @@ func TestResolveSources(t *testing.T) {
 		module("cached", "3.1.0", str("https://x/module.json"), "https://x/v3.1.0/cached.zip"),
 	}}
 
-	got := ResolvePackages(inv, "13.351", fakeCache{"module/cached@3.1.0": true})
+	got := ResolvePackages(inv, "13.351", "13.351", fakeCache{"module/cached@3.1.0": true})
 
 	cases := []struct {
 		id      string
@@ -76,7 +76,7 @@ func TestPremiumIsNeverShared(t *testing.T) {
 		module("pf2e-kingmaker", "1.2.0", str(""), "https://paizo/kingmaker-1.2.0.zip"),
 	}}
 
-	p := find(t, ResolvePackages(inv, "13.351", fakeCache{"module/pf2e-kingmaker@1.2.0": true}), "pf2e-kingmaker")
+	p := find(t, ResolvePackages(inv, "13.351", "13.351", fakeCache{"module/pf2e-kingmaker@1.2.0": true}), "pf2e-kingmaker")
 	if p.Source != FromUpload {
 		t.Errorf("premium resolved to %q; a cache hit must not serve paid content", p.Source)
 	}
@@ -87,7 +87,7 @@ func TestPremiumIsNeverShared(t *testing.T) {
 
 func TestDefaultPolicyIsPin(t *testing.T) {
 	inv := &foundry.Inventory{Modules: []foundry.Package{module("m", "1.0.0", str("https://x"), "")}}
-	if got := ResolvePackages(inv, "13.351", nil)[0].Policy; got != PolicyPin {
+	if got := ResolvePackages(inv, "13.351", "13.351", nil)[0].Policy; got != PolicyPin {
 		t.Errorf("policy = %q, want %q", got, PolicyPin)
 	}
 }
@@ -97,7 +97,7 @@ func TestCompatVerdictFlows(t *testing.T) {
 	m.Compat = foundry.Compatibility{Minimum: "9", Verified: "10"}
 	inv := &foundry.Inventory{Modules: []foundry.Package{m}}
 
-	if got := ResolvePackages(inv, "13.351", nil)[0].Compat; got != "untested" {
+	if got := ResolvePackages(inv, "13.351", "13.351", nil)[0].CompatDeclared; got != "untested" {
 		t.Errorf("compat = %q, want untested", got)
 	}
 }
