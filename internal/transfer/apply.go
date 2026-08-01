@@ -1,0 +1,131 @@
+package transfer
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/def-gu/fvtt-migrate/internal/content"
+)
+
+type Progress struct {
+	Selected     int
+	Negotiated   int
+	Uploaded     int
+	UploadedByte int64
+	Placed       int
+	Skipped      int
+	SkippedByte  int64
+}
+
+type Options struct {
+	Workers  int
+	OnUpload func(rel string, size int64)
+}
+
+func Apply(ctx context.Context, sourceRoot string, sel Selection, digests map[string]content.Entry, tgt Target, opts Options) (*Progress, error) {
+	if opts.Workers <= 0 {
+		opts.Workers = 4
+	}
+
+	prog := &Progress{Selected: len(sel.Paths)}
+
+	want := make([]content.Digest, 0, len(sel.Paths))
+	byDigest := map[content.Digest]content.Entry{}
+	for _, rel := range sel.Paths {
+		e, ok := digests[rel]
+		if !ok {
+			return nil, fmt.Errorf("no digest for %s", rel)
+		}
+		if _, seen := byDigest[e.Digest]; !seen {
+			byDigest[e.Digest] = e
+			want = append(want, e.Digest)
+		}
+	}
+
+	missing, err := tgt.Missing(ctx, want)
+	if err != nil {
+		return nil, err
+	}
+	needed := make(map[content.Digest]bool, len(missing))
+	for _, d := range missing {
+		needed[d] = true
+	}
+	prog.Negotiated = len(want)
+	prog.Skipped = len(want) - len(missing)
+	for _, d := range want {
+		if !needed[d] {
+			prog.SkippedByte += byDigest[d].Size
+		}
+	}
+
+	if err := uploadAll(ctx, sourceRoot, missing, byDigest, tgt, opts, prog); err != nil {
+		return prog, err
+	}
+
+	for _, rel := range sel.Paths {
+		if err := tgt.Place(ctx, digests[rel].Digest, rel); err != nil {
+			return prog, fmt.Errorf("place %s: %w", rel, err)
+		}
+		prog.Placed++
+	}
+	return prog, tgt.Commit(ctx)
+}
+
+func uploadAll(ctx context.Context, root string, missing []content.Digest, byDigest map[content.Digest]content.Entry, tgt Target, opts Options, prog *Progress) error {
+	jobs := make(chan content.Digest)
+	errs := make(chan error, opts.Workers)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for i := 0; i < opts.Workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for d := range jobs {
+				e := byDigest[d]
+				if err := upload(ctx, root, e, tgt); err != nil {
+					select {
+					case errs <- err:
+					default:
+					}
+					return
+				}
+				mu.Lock()
+				prog.Uploaded++
+				prog.UploadedByte += e.Size
+				mu.Unlock()
+				if opts.OnUpload != nil {
+					opts.OnUpload(e.Path, e.Size)
+				}
+			}
+		}()
+	}
+
+	for _, d := range missing {
+		select {
+		case jobs <- d:
+		case <-ctx.Done():
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	select {
+	case err := <-errs:
+		return err
+	default:
+		return nil
+	}
+}
+
+func upload(ctx context.Context, root string, e content.Entry, tgt Target) error {
+	f, err := os.Open(filepath.Join(root, filepath.FromSlash(e.Path)))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return tgt.Put(ctx, e.Digest, e.Size, f)
+}

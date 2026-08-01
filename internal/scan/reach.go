@@ -39,6 +39,13 @@ type Summary struct {
 	CaseIssues   []Missing
 	CoreRefs     int
 	UniqueRefs   int
+
+	referenced  map[string]bool
+	packageDirs map[string]bool
+}
+
+func (s *Summary) Classify(rel string) Class {
+	return classify(rel, s.referenced, s.packageDirs)
 }
 
 // Orphans plus broken references into the same directory mean stale paths,
@@ -127,6 +134,8 @@ func Analyze(inv *foundry.Inventory, ix *Index) (*Summary, error) {
 		}
 	})
 
+	s.referenced = referenced
+	s.packageDirs = packageDirs
 	s.Broken = sortMissing(broken)
 	s.CaseIssues = sortMissing(caseIssues)
 	return s, nil
