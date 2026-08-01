@@ -26,27 +26,27 @@ const (
 )
 
 type Package struct {
-	ID      string `yaml:"id"`
-	Kind    string `yaml:"kind"`
-	Version string `yaml:"version"`
-	Source  Source `yaml:"source"`
-	Reason  string `yaml:"reason,omitempty"`
-	Policy  Policy `yaml:"policy"`
-	Premium bool   `yaml:"premium,omitempty"`
+	ID      string `yaml:"id" json:"id"`
+	Kind    string `yaml:"kind" json:"kind"`
+	Version string `yaml:"version" json:"version"`
+	Source  Source `yaml:"source" json:"source"`
+	Reason  string `yaml:"reason,omitempty" json:"reason,omitempty"`
+	Policy  Policy `yaml:"policy" json:"policy"`
+	Premium bool   `yaml:"premium,omitempty" json:"premium,omitempty"`
 
-	CompatDeclared  string         `yaml:"compat_declared"`
-	ObservedOn      string         `yaml:"observed_on,omitempty"`
-	Available       string         `yaml:"available,omitempty"`
-	CompatAvailable string         `yaml:"compat_available,omitempty"`
-	Recommend       Recommendation `yaml:"recommend"`
-	Widens          bool           `yaml:"widens_support,omitempty"`
+	CompatDeclared  string         `yaml:"compat_declared" json:"compat_declared"`
+	ObservedOn      string         `yaml:"observed_on,omitempty" json:"observed_on,omitempty"`
+	Available       string         `yaml:"available,omitempty" json:"available,omitempty"`
+	CompatAvailable string         `yaml:"compat_available,omitempty" json:"compat_available,omitempty"`
+	Recommend       Recommendation `yaml:"recommend" json:"recommend"`
+	Widens          bool           `yaml:"widens_support,omitempty" json:"widens_support,omitempty"`
 
-	ManifestURL string `yaml:"manifest_url,omitempty"`
-	Entitlement string `yaml:"entitled_by"`
+	ManifestURL string `yaml:"manifest_url,omitempty" json:"manifest_url,omitempty"`
+	Entitlement string `yaml:"entitled_by" json:"entitled_by"`
 
 	// An optimisation, never an authorisation: entitlement is checked first and
 	// independently of where the bytes come from.
-	Shared bool `yaml:"-"`
+	Shared bool `yaml:"-" json:"-"`
 }
 
 // Having had the package is the only basis on which it is ever handed back.

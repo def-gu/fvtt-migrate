@@ -23,31 +23,31 @@ var writtenCapabilities = []string{
 }
 
 type Format struct {
-	Version      int      `yaml:"version"`
-	Capabilities []string `yaml:"capabilities"`
+	Version      int      `yaml:"version" json:"version"`
+	Capabilities []string `yaml:"capabilities" json:"capabilities"`
 }
 
 type Identity struct {
-	Tenant       string `yaml:"tenant,omitempty"`
-	Device       string `yaml:"device,omitempty"`
-	Installation string `yaml:"installation,omitempty"`
+	Tenant       string `yaml:"tenant,omitempty" json:"tenant,omitempty"`
+	Device       string `yaml:"device,omitempty" json:"device,omitempty"`
+	Installation string `yaml:"installation,omitempty" json:"installation,omitempty"`
 }
 
 // Baton records which installation last held a world and the state both sides
 // agreed on, so a later handoff can tell divergence from a fresh copy.
 type Baton struct {
-	Holder     string `yaml:"holder"`
-	Generation int    `yaml:"generation"`
-	BaseDigest string `yaml:"base_digest,omitempty"`
+	Holder     string `yaml:"holder" json:"holder"`
+	Generation int    `yaml:"generation" json:"generation"`
+	BaseDigest string `yaml:"base_digest,omitempty" json:"base_digest,omitempty"`
 }
 
 type Plan struct {
-	Format   Format    `yaml:"format"`
-	Identity Identity  `yaml:"identity"`
-	Source   Endpoint  `yaml:"source"`
-	Worlds   []World   `yaml:"worlds"`
-	Packages []Package `yaml:"packages"`
-	Assets   Assets    `yaml:"assets"`
+	Format   Format    `yaml:"format" json:"format"`
+	Identity Identity  `yaml:"identity" json:"identity"`
+	Source   Endpoint  `yaml:"source" json:"source"`
+	Worlds   []World   `yaml:"worlds" json:"worlds"`
+	Packages []Package `yaml:"packages" json:"packages"`
+	Assets   Assets    `yaml:"assets" json:"assets"`
 }
 
 type UnsupportedError struct {
@@ -78,43 +78,43 @@ func (f Format) Check() error {
 }
 
 type Endpoint struct {
-	Root        string `yaml:"root"`
-	OS          string `yaml:"os"`
-	TargetCore  string `yaml:"target_core_version"`
-	PackageMode Policy `yaml:"package_policy"`
+	Root        string `yaml:"root" json:"root"`
+	OS          string `yaml:"os" json:"os"`
+	TargetCore  string `yaml:"target_core_version" json:"target_core_version"`
+	PackageMode Policy `yaml:"package_policy" json:"package_policy"`
 }
 
 type World struct {
-	ID              string `yaml:"id"`
-	System          string `yaml:"system"`
-	SystemVersion   string `yaml:"system_version"`
-	CoreVersion     string `yaml:"core_version"`
-	SystemInstalled bool   `yaml:"system_installed"`
-	Include         bool   `yaml:"include"`
-	Blocker         string `yaml:"blocker,omitempty"`
-	Baton           *Baton `yaml:"baton,omitempty"`
+	ID              string `yaml:"id" json:"id"`
+	System          string `yaml:"system" json:"system"`
+	SystemVersion   string `yaml:"system_version" json:"system_version"`
+	CoreVersion     string `yaml:"core_version" json:"core_version"`
+	SystemInstalled bool   `yaml:"system_installed" json:"system_installed"`
+	Include         bool   `yaml:"include" json:"include"`
+	Blocker         string `yaml:"blocker,omitempty" json:"blocker,omitempty"`
+	Baton           *Baton `yaml:"baton,omitempty" json:"baton,omitempty"`
 }
 
 type Assets struct {
-	Referenced  Bucket      `yaml:"referenced"`
-	Packaged    Bucket      `yaml:"in_packages"`
-	Directories []Directory `yaml:"user_directories"`
-	BrokenRefs  int         `yaml:"broken_references"`
-	CaseOnly    int         `yaml:"case_only_matches"`
+	Referenced  Bucket      `yaml:"referenced" json:"referenced"`
+	Packaged    Bucket      `yaml:"in_packages" json:"in_packages"`
+	Directories []Directory `yaml:"user_directories" json:"user_directories"`
+	BrokenRefs  int         `yaml:"broken_references" json:"broken_references"`
+	CaseOnly    int         `yaml:"case_only_matches" json:"case_only_matches"`
 }
 
 type Bucket struct {
-	Files int   `yaml:"files"`
-	Bytes int64 `yaml:"bytes"`
+	Files int   `yaml:"files" json:"files"`
+	Bytes int64 `yaml:"bytes" json:"bytes"`
 }
 
 type Directory struct {
-	Path   string `yaml:"path"`
-	Files  int    `yaml:"files"`
-	Bytes  int64  `yaml:"bytes"`
-	Action string `yaml:"action"`
-	Note   string `yaml:"note,omitempty"`
-	Broken int    `yaml:"broken_references_into_it,omitempty"`
+	Path   string `yaml:"path" json:"path"`
+	Files  int    `yaml:"files" json:"files"`
+	Bytes  int64  `yaml:"bytes" json:"bytes"`
+	Action string `yaml:"action" json:"action"`
+	Note   string `yaml:"note,omitempty" json:"note,omitempty"`
+	Broken int    `yaml:"broken_references_into_it,omitempty" json:"broken_references_into_it,omitempty"`
 }
 
 func Build(inst *foundry.Install, inv *foundry.Inventory, sum *scan.Summary, opts Options) *Plan {
