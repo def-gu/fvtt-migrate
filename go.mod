@@ -6,5 +6,7 @@ require github.com/syndtr/goleveldb v1.0.0
 
 require (
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
+	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	lukechampine.com/blake3 v1.4.1 // indirect
 )
