@@ -1,27 +1,31 @@
+import type { VerifyResult } from "../contract";
 import { count } from "../format";
 import { Section } from "../ui";
-import { VERIFY } from "../sample";
 
-export function VerifyScreen() {
-  const ok = VERIFY.missing.length === 0 && VERIFY.mismatch.length === 0 &&
-    VERIFY.worlds.every((w) => w.source_documents === w.target_documents);
+type Props = { result: VerifyResult; onBack: () => void };
+
+export function VerifyScreen({ result, onBack }: Props) {
+  const ok =
+    result.missing.length === 0 &&
+    result.mismatch.length === 0 &&
+    result.worlds.every((w) => w.source_documents === w.target_documents);
 
   return (
     <div className="screen">
       <header className="screen-head">
         <div>
           <div className="kicker">Проверка</div>
-          <h1>{ok ? "Перенос совпадает с источником" : "Найдены расхождения"}</h1>
+          <h1>{ok ? "Копия совпадает с источником" : "Найдены расхождения"}</h1>
           <p className="lead">
-            Проверка запускается сама после переноса. Файлы могут скопироваться полностью, а мир
-            при этом остаться пустым. Это единственная проверка, которая находит такой случай.
+            Файлы могут скопироваться полностью, а мир при этом остаться пустым. Счёт документов
+            находит такой случай.
           </p>
         </div>
       </header>
 
       <Section title="Миры" hint="число документов в источнике и на приёмнике">
         <div className="rows">
-          {VERIFY.worlds.map((w) => {
+          {result.worlds.map((w) => {
             const same = w.source_documents === w.target_documents;
             return (
               <div key={w.id} className={"row" + (same ? "" : " row-bad")}>
@@ -30,6 +34,7 @@ export function VerifyScreen() {
                   <div className="row-sub">
                     источник {count(w.source_documents)}, приёмник {count(w.target_documents)}
                   </div>
+                  {w.failure && <div className="row-blocker">{w.failure}</div>}
                   {!same && w.differing_namespaces && (
                     <div className="row-blocker">
                       На приёмнике отсутствуют {w.differing_namespaces.join(", ")}
@@ -45,25 +50,13 @@ export function VerifyScreen() {
         </div>
       </Section>
 
-      <Section title="Файлы">
-        <div className="stats">
-          <div>
-            <b>{count(VERIFY.missing.length)}</b>
-            <span>путей</span>
-            <em>отсутствуют на приёмнике</em>
-          </div>
-          <div>
-            <b>{count(VERIFY.mismatch.length)}</b>
-            <span>путей</span>
-            <em>содержимое различается</em>
-          </div>
-        </div>
-      </Section>
-
       <footer className="footer">
         <div className="footer-text">
-          Всё, что было выбрано в плане, присутствует и читается так же, как в источнике.
+          {ok
+            ? "Каждый переехавший мир читается с тем же числом документов."
+            : "Перенос стоит повторить, он дошлёт недостающее."}
         </div>
+        <button className="btn btn-primary" onClick={onBack}>К плану</button>
       </footer>
     </div>
   );

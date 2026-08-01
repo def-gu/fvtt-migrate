@@ -50,10 +50,21 @@ func main() {
 	deep := fs.Bool("deep", false, "re-hash every transferred file at the target")
 
 	switch cmd {
-	case "scan", "plan", "apply", "verify", "serve":
+	case "scan", "plan", "apply", "verify", "serve", "panel":
 		fs.Parse(os.Args[2:])
 	default:
 		usage()
+	}
+	if cmd == "panel" {
+		if *root == "" {
+			fs.Usage()
+			os.Exit(2)
+		}
+		if err := runPanel(*root, *core, *listen); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
 	}
 	if cmd == "serve" {
 		if *to == "" {
@@ -199,6 +210,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate plan --root <user data> [--core <application dir>] [--out plan.yaml] [--check-updates]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate apply --root <user data> --to <directory> [--out plan.yaml] [--dry-run]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate verify --root <user data> --to <directory> [--deep]")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate panel --root <user data> [--listen 127.0.0.1:7788]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate serve --to <directory> [--listen 127.0.0.1:7788]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate version")
 	os.Exit(2)

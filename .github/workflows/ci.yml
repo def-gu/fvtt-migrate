@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt-ed:"; echo "$unformatted"; exit 1
+          fi
+
+      - run: go vet ./...
+      - run: go test -race ./...
+
+      - name: Cross build
+        run: |
+          for pair in linux/amd64 linux/arm64 windows/amd64 darwin/arm64; do
+            GOOS=${pair%/*} GOARCH=${pair#*/} CGO_ENABLED=0 \
+              go build -o /dev/null ./cmd/fvtt-migrate
+          done
+
+  panel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+        working-directory: web
+
+      - run: npx tsc -b
+        working-directory: web
+
+      - name: Embedded panel matches its source
+        run: |
+          npm --prefix web run build
+          if ! diff -r web/dist internal/api/panel; then
+            echo
+            echo "The committed panel differs from what web/ builds."
+            echo "Run ./build-panel.sh and commit the result."
+            exit 1
+          fi
+
+      - name: Interface text follows the house rules
+        run: python3 scripts/check-text.py

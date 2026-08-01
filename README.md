@@ -202,12 +202,36 @@ missing.
 
 ## Graphical panel
 
+If you would rather not type commands, run the panel instead. Everything the
+steps above do is available in it.
+
 ```
-fvtt-migrate serve --to /path/to/destination
+fvtt-migrate panel --root /path/to/FoundryVTT
 ```
 
-Then open `http://127.0.0.1:7788/`. The panel is served only when the address
-points at this same machine, because it has no password of its own.
+Then open `http://127.0.0.1:7788/` in a browser. Closing the window that runs
+the command stops the panel.
+
+The panel is served only on this machine, because it has no password of its own.
+
+It reads your installation and shows one page. At the top, the target Foundry
+version, which is a control rather than a label, because changing it recomputes
+every recommendation below. Then your worlds, with the ones that cannot open at
+the destination switched off and the reason stated. Then all packages, sorted by
+what should happen to each. Then the loose files, with any folder whose paths
+have gone stale called out.
+
+At the bottom you give the destination. A path for a folder on this machine, or
+the `https` address of the receiving side together with the access key it
+printed. Two buttons follow. The first works out what would move and writes
+nothing. The second starts the transfer.
+
+During the transfer the panel names the phase it is in and shows what has been
+sent next to what was skipped because the far side already had it. Stopping is
+safe at any moment.
+
+When it finishes, the panel offers to check the result, which opens every world
+on both sides and counts documents, the same check the `verify` command performs.
 
 ## Building from source
 

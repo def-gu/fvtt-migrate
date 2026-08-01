@@ -52,6 +52,8 @@ type Sink interface {
 
 type sinkFunc func(any)
 
+func Func(f func(any)) Sink { return sinkFunc(f) }
+
 func (f sinkFunc) Emit(v any) {
 	if f != nil {
 		f(v)

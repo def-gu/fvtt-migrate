@@ -1,46 +1,85 @@
 import { useMemo, useState } from "react";
 import type { Package, Plan } from "../contract";
+import type { Destination, State } from "../api";
+import * as api from "../api";
 import { bytes, count, files, packages, plural } from "../format";
 import { Callout, Check, Disclosure, GroupHead, Section } from "../ui";
-import { TARGETS, TOTAL, planFor } from "../sample";
 
-type Props = { onStart: () => void };
+type Props = {
+  state: State;
+  plan: Plan;
+  dest: Destination;
+  onDest: (d: Destination) => void;
+  onPlan: (p: Plan) => void;
+  onStart: () => void;
+};
 
-export function PlanScreen({ onStart }: Props) {
-  const [target, setTarget] = useState(TARGETS[0].version);
-  const [worldsOff, setWorldsOff] = useState<Set<string>>(new Set());
-  const [taken, setTaken] = useState<Set<string>>(new Set());
-  const [dirsOff, setDirsOff] = useState<Set<string>>(new Set());
-
-  const plan = useMemo(() => planFor(target), [target]);
+export function PlanScreen({ state, plan, dest, onDest, onPlan, onStart }: Props) {
+  const [busy, setBusy] = useState(false);
+  const [checkUpdates, setCheckUpdates] = useState(false);
   const groups = useMemo(() => split(plan), [plan]);
 
-  const included = plan.worlds.filter((w) => !w.blocker && !worldsOff.has(w.id));
-  const blocked = plan.worlds.filter((w) => w.blocker);
-
-  const toggle = (set: Set<string>, apply: (s: Set<string>) => void) => (id: string) => {
-    const next = new Set(set);
-    next.has(id) ? next.delete(id) : next.add(id);
-    apply(next);
+  const rebuild = async (target: string, updates: boolean) => {
+    setBusy(true);
+    try {
+      onPlan(await api.buildPlan(target, updates));
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const setWorld = (id: string, include: boolean) =>
+    onPlan({ ...plan, worlds: plan.worlds.map((w) => (w.id === id ? { ...w, include } : w)) });
+
+  const setDirectory = (path: string, action: "include" | "skip") =>
+    onPlan({
+      ...plan,
+      assets: {
+        ...plan.assets,
+        user_directories: plan.assets.user_directories.map((d) =>
+          d.path === path ? { ...d, action } : d,
+        ),
+      },
+    });
+
+  const setPolicy = (id: string, take: boolean) =>
+    onPlan({
+      ...plan,
+      packages: plan.packages.map((p) => (p.id === id ? { ...p, policy: take ? "latest" : "pin" } : p)),
+    });
+
+  const included = plan.worlds.filter((w) => !w.blocker && w.include);
+  const blocked = plan.worlds.filter((w) => w.blocker);
+  const ready = dest.to.trim() !== "" && !busy;
 
   return (
     <div className="screen">
       <header className="screen-head">
         <div>
-          <div className="kicker">Источник</div>
-          <h1>{plan.source.root}</h1>
+          <div className="kicker">План переноса</div>
+          <h1>{state.scan.counts.worlds} {plural(state.scan.counts.worlds, "мир", "мира", "миров")}, {packages(plan.packages.length)}</h1>
         </div>
         <label className="target">
           <span className="target-label">Целевая версия Foundry</span>
-          <select value={target} onChange={(e) => setTarget(e.target.value)}>
-            {TARGETS.map((t) => (
-              <option key={t.version} value={t.version}>
-                {t.version}, {t.hint}
-              </option>
+          <select
+            value={plan.source.target_core_version}
+            disabled={busy}
+            onChange={(e) => rebuild(e.target.value, checkUpdates)}
+          >
+            {state.targets.map((t) => (
+              <option key={t} value={t}>{t}</option>
             ))}
           </select>
           <span className="target-note">Выбор версии меняет все решения ниже</span>
+          <Check
+            checked={checkUpdates}
+            disabled={busy}
+            label="узнать доступные версии у источников"
+            onChange={(v) => {
+              setCheckUpdates(v);
+              rebuild(plan.source.target_core_version, v);
+            }}
+          />
         </label>
       </header>
 
@@ -50,15 +89,13 @@ export function PlanScreen({ onStart }: Props) {
             <div key={w.id} className={"row" + (w.blocker ? " row-blocked" : "")}>
               <div className="row-main">
                 <div className="row-title">{w.id}</div>
-                <div className="row-sub">
-                  {w.system} {w.system_version}, ядро {w.core_version}
-                </div>
+                <div className="row-sub">{w.system} {w.system_version}, ядро {w.core_version}</div>
                 {w.blocker && <div className="row-blocker">{w.blocker}</div>}
               </div>
               <Check
-                checked={!w.blocker && !worldsOff.has(w.id)}
+                checked={!w.blocker && w.include}
                 disabled={Boolean(w.blocker)}
-                onChange={() => toggle(worldsOff, setWorldsOff)(w.id)}
+                onChange={(v) => setWorld(w.id, v)}
                 label="переносить"
               />
             </div>
@@ -66,35 +103,27 @@ export function PlanScreen({ onStart }: Props) {
         </div>
         {blocked.length > 0 && (
           <p className="section-foot">
-            {plural(blocked.length, "Заблокирован", "Заблокированы", "Заблокированы")}{" "}
-            {blocked.length} {plural(blocked.length, "мир", "мира", "миров")}. Это обычное
-            состояние, а не сбой.
+            {plural(blocked.length, "Заблокирован", "Заблокированы", "Заблокированы")} {blocked.length}{" "}
+            {plural(blocked.length, "мир", "мира", "миров")}. Это обычное состояние, а не сбой.
           </p>
         )}
       </Section>
 
       <Section title="Пакеты" hint={`${packages(plan.packages.length)} всего`}>
-        {groups.required.length > 0 && (
-          <>
-            <GroupHead
-              title="Требуют обновления"
-              n={groups.required.length}
-              hint="Установленные сборки на выбранной версии не запускаются"
-            />
-            <PackageRows list={groups.required} taken={taken} onToggle={toggle(taken, setTaken)} />
-          </>
-        )}
-
-        {groups.widening.length > 0 && (
-          <>
-            <GroupHead
-              title="Стоит взять"
-              n={groups.widening.length}
-              hint="Работают на выбранной версии и подготовлены к следующему поколению"
-            />
-            <PackageRows list={groups.widening} taken={taken} onToggle={toggle(taken, setTaken)} />
-          </>
-        )}
+        <Group
+          title="Требуют обновления"
+          hint="Установленные сборки на выбранной версии не запускаются"
+          list={groups.required}
+          plan={plan}
+          onTake={setPolicy}
+        />
+        <Group
+          title="Стоит взять"
+          hint="Работают на выбранной версии и подготовлены к следующему поколению"
+          list={groups.widening}
+          plan={plan}
+          onTake={setPolicy}
+        />
 
         {groups.keep.length > 0 && (
           <>
@@ -163,28 +192,27 @@ export function PlanScreen({ onStart }: Props) {
           </div>
         </div>
 
-        {plan.assets.user_directories.map((d) =>
-          d.looks_stale ? (
+        {plan.assets.user_directories
+          .filter((d) => d.looks_stale)
+          .map((d) => (
             <Callout
               key={d.path}
               kicker="пути устарели, файлы не лишние"
               title={`Папка «${d.path}», ${files(d.files)}, ${bytes(d.bytes)}`}
               aside={
                 <Check
-                  checked={!dirsOff.has(d.path)}
-                  onChange={() => toggle(dirsOff, setDirsOff)(d.path)}
+                  checked={d.action === "include"}
+                  onChange={(v) => setDirectory(d.path, v ? "include" : "skip")}
                   label="переносить"
                 />
               }
             >
-              Живых ссылок на эти файлы нет, но{" "}
-              {count(d.broken_references_into_it ?? 0)}{" "}
+              Живых ссылок на эти файлы нет, но {count(d.broken_references_into_it ?? 0)}{" "}
               {plural(d.broken_references_into_it ?? 0, "битая ссылка ведёт", "битые ссылки ведут", "битых ссылок ведут")}{" "}
               внутрь этой же папки. Похоже, у файлов сместились пути. Папка включена в перенос,
               чтобы ссылки можно было починить на новом месте.
             </Callout>
-          ) : null,
-        )}
+          ))}
 
         <Disclosure label="Показать остальные папки без ссылок">
           <div className="rows">
@@ -194,13 +222,11 @@ export function PlanScreen({ onStart }: Props) {
                 <div key={d.path} className="row">
                   <div className="row-main">
                     <div className="row-title">{d.path}</div>
-                    <div className="row-sub">
-                      {files(d.files)}, {bytes(d.bytes)}
-                    </div>
+                    <div className="row-sub">{files(d.files)}, {bytes(d.bytes)}</div>
                   </div>
                   <Check
-                    checked={!dirsOff.has(d.path)}
-                    onChange={() => toggle(dirsOff, setDirsOff)(d.path)}
+                    checked={d.action === "include"}
+                    onChange={(v) => setDirectory(d.path, v ? "include" : "skip")}
                     label="переносить"
                   />
                 </div>
@@ -209,13 +235,57 @@ export function PlanScreen({ onStart }: Props) {
         </Disclosure>
       </Section>
 
+      <Section title="Куда переносить">
+        <div className="dest">
+          <label className="field">
+            <span>Адрес приёмника</span>
+            <input
+              className="input"
+              placeholder="https://ваш.домен или /путь/до/папки"
+              value={dest.to}
+              onChange={(e) => onDest({ ...dest, to: e.target.value })}
+            />
+          </label>
+          <label className="field">
+            <span>Ключ доступа</span>
+            <input
+              className="input"
+              type="password"
+              placeholder="для адреса с https"
+              value={dest.token}
+              onChange={(e) => onDest({ ...dest, token: e.target.value })}
+            />
+          </label>
+        </div>
+        <p className="section-foot">
+          Ключ печатает принимающая сторона при запуске. Для переноса в папку на этой же машине
+          он не нужен.
+        </p>
+      </Section>
+
       <footer className="footer">
         <div className="footer-text">
-          Будет скопировано {files(TOTAL.files)}, {bytes(TOTAL.bytes)}.
-          {taken.size > 0 && ` Обновится ${packages(taken.size)}.`} Установка не изменяется.
+          Будет скопировано {files(plan.assets.referenced.files + plan.assets.in_packages.files)},{" "}
+          {bytes(plan.assets.referenced.bytes + plan.assets.in_packages.bytes)}. Установка не изменяется.
         </div>
-        <button className="btn btn-secondary">Предварительный расчёт</button>
-        <button className="btn btn-primary" onClick={onStart}>
+        <button
+          className="btn btn-secondary"
+          disabled={!ready}
+          onClick={() => {
+            onDest({ ...dest, dryRun: true });
+            onStart();
+          }}
+        >
+          Предварительный расчёт
+        </button>
+        <button
+          className="btn btn-primary"
+          disabled={!ready}
+          onClick={() => {
+            onDest({ ...dest, dryRun: false });
+            onStart();
+          }}
+        >
           Начать перенос
         </button>
       </footer>
@@ -223,23 +293,34 @@ export function PlanScreen({ onStart }: Props) {
   );
 }
 
-function PackageRows({
-  list, taken, onToggle,
-}: { list: Package[]; taken: Set<string>; onToggle: (id: string) => void }) {
+function Group({
+  title, hint, list, plan, onTake,
+}: {
+  title: string; hint: string; list: Package[]; plan: Plan;
+  onTake: (id: string, take: boolean) => void;
+}) {
+  if (list.length === 0) return null;
+  const policy = new Map(plan.packages.map((p) => [p.id, p.policy]));
+
   return (
-    <div className="rows">
-      {list.map((p) => (
-        <div key={p.id} className="row">
-          <div className="row-main">
-            <div className="row-title">{p.id}</div>
-            <div className="row-sub">
-              {p.version} до {p.available}
+    <>
+      <GroupHead title={title} n={list.length} hint={hint} />
+      <div className="rows">
+        {list.map((p) => (
+          <div key={p.id} className="row">
+            <div className="row-main">
+              <div className="row-title">{p.id}</div>
+              <div className="row-sub">{p.version} до {p.available}</div>
             </div>
+            <Check
+              checked={policy.get(p.id) !== "pin"}
+              onChange={(v) => onTake(p.id, v)}
+              label="обновить"
+            />
           </div>
-          <Check checked={taken.has(p.id)} onChange={() => onToggle(p.id)} label="обновить" />
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }
 
