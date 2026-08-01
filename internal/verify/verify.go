@@ -10,11 +10,12 @@ import (
 )
 
 type WorldCheck struct {
-	ID         string
-	SourceDocs int
-	TargetDocs int
-	Namespaces []string
-	Err        error
+	ID         string   `json:"id"`
+	SourceDocs int      `json:"source_documents"`
+	TargetDocs int      `json:"target_documents"`
+	Namespaces []string `json:"differing_namespaces,omitempty"`
+	Err        error    `json:"-"`
+	Failure    string   `json:"failure,omitempty"`
 }
 
 func (w WorldCheck) OK() bool {
@@ -22,10 +23,10 @@ func (w WorldCheck) OK() bool {
 }
 
 type Result struct {
-	Missing  []string
-	Mismatch []string
-	Worlds   []WorldCheck
-	Rehashed int
+	Missing  []string     `json:"missing"`
+	Mismatch []string     `json:"mismatch"`
+	Worlds   []WorldCheck `json:"worlds"`
+	Rehashed int          `json:"rehashed"`
 }
 
 func (r *Result) OK() bool {
@@ -103,12 +104,12 @@ func compareWorld(sourceDir, targetDir, id string) WorldCheck {
 
 	source, err := countByNamespace(sourceDir)
 	if err != nil {
-		check.Err = err
+		check.Err, check.Failure = err, err.Error()
 		return check
 	}
 	target, err := countByNamespace(targetDir)
 	if err != nil {
-		check.Err = err
+		check.Err, check.Failure = err, err.Error()
 		return check
 	}
 

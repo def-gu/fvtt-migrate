@@ -11,13 +11,13 @@ import (
 )
 
 type Progress struct {
-	Selected     int
-	Negotiated   int
-	Uploaded     int
-	UploadedByte int64
-	Placed       int
-	Skipped      int
-	SkippedByte  int64
+	Selected     int   `json:"selected_files"`
+	Negotiated   int   `json:"unique_blobs"`
+	Uploaded     int   `json:"transferred_blobs"`
+	UploadedByte int64 `json:"transferred_bytes"`
+	Placed       int   `json:"placed_files"`
+	Skipped      int   `json:"already_present_blobs"`
+	SkippedByte  int64 `json:"already_present_bytes"`
 }
 
 type Options struct {

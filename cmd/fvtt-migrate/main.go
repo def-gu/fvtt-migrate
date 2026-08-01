@@ -5,13 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/def-gu/fvtt-migrate/internal/content"
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
 	"github.com/def-gu/fvtt-migrate/internal/plan"
+	"github.com/def-gu/fvtt-migrate/internal/report"
 	"github.com/def-gu/fvtt-migrate/internal/scan"
 	"github.com/def-gu/fvtt-migrate/internal/transfer"
 	"github.com/def-gu/fvtt-migrate/internal/upstream"
@@ -34,6 +34,7 @@ func main() {
 
 	to := fs.String("to", "", "directory to migrate into")
 	force := fs.Bool("force", false, "copy even while a world is loaded")
+	asJSON := fs.Bool("json", false, "emit machine-readable output instead of text")
 	deep := fs.Bool("deep", false, "re-hash every transferred file at the target")
 
 	switch cmd {
@@ -50,21 +51,21 @@ func main() {
 	var err error
 	switch cmd {
 	case "scan":
-		err = runScan(*root, *core, *limit)
+		err = runScan(*root, *core, *limit, *asJSON)
 	case "plan":
-		err = runPlan(*root, *core, *targetCore, *out, *checkUpdates)
+		err = runPlan(*root, *core, *targetCore, *out, *checkUpdates, *asJSON)
 	case "apply":
 		if *to == "" {
 			fs.Usage()
 			os.Exit(2)
 		}
-		err = runApply(*root, *core, *out, *to, *force)
+		err = runApply(*root, *core, *out, *to, *force, *asJSON)
 	case "verify":
 		if *to == "" {
 			fs.Usage()
 			os.Exit(2)
 		}
-		err = runVerify(*root, *core, *out, *to, *deep)
+		err = runVerify(*root, *core, *out, *to, *deep, *asJSON)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -72,7 +73,7 @@ func main() {
 	}
 }
 
-func runApply(root, core, planPath, to string, force bool) error {
+func runApply(root, core, planPath, to string, force, asJSON bool) error {
 	inst, _, ix, sum, err := analyse(root, core)
 	if err != nil {
 		return err
@@ -99,7 +100,7 @@ func runApply(root, core, planPath, to string, force bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Selected %d files, %s\n", len(sel.Paths), humanBytes(sel.Bytes))
+	fmt.Printf("Selected %d files, %s\n", len(sel.Paths), report.Bytes(sel.Bytes))
 
 	cache := content.OpenCache(inst.Root)
 	hashed := content.HashTree(inst.Data, sel.Paths, cache, 0)
@@ -127,9 +128,13 @@ func runApply(root, core, planPath, to string, force bool) error {
 		return fmt.Errorf("%d source files changed during the copy; the result is not a snapshot of any single moment", len(moved))
 	}
 
+	if asJSON {
+		return report.JSON(os.Stdout, prog)
+	}
+
 	fmt.Printf("\nUnique blobs   %d\n", prog.Negotiated)
-	fmt.Printf("Transferred    %d blobs, %s\n", prog.Uploaded, humanBytes(prog.UploadedByte))
-	fmt.Printf("Already there  %d blobs, %s not sent\n", prog.Skipped, humanBytes(prog.SkippedByte))
+	fmt.Printf("Transferred    %d blobs, %s\n", prog.Uploaded, report.Bytes(prog.UploadedByte))
+	fmt.Printf("Already there  %d blobs, %s not sent\n", prog.Skipped, report.Bytes(prog.SkippedByte))
 	fmt.Printf("Placed         %d files under %s\n", prog.Placed, to)
 	fmt.Println("\nThe source installation was not modified.")
 	return nil
@@ -169,16 +174,20 @@ func analyse(root, core string) (*foundry.Install, *foundry.Inventory, *scan.Ind
 	return inst, inv, ix, sum, nil
 }
 
-func runScan(root, core string, limit int) error {
+func runScan(root, core string, limit int, asJSON bool) error {
 	inst, inv, ix, sum, err := analyse(root, core)
 	if err != nil {
 		return err
 	}
-	report(inst, inv, ix, sum, limit)
+	r := report.BuildScan(inst, inv, ix, sum)
+	if asJSON {
+		return report.JSON(os.Stdout, r)
+	}
+	r.Text(os.Stdout, limit)
 	return nil
 }
 
-func runPlan(root, core, targetCore, out string, checkUpdates bool) error {
+func runPlan(root, core, targetCore, out string, checkUpdates, asJSON bool) error {
 	inst, inv, _, sum, err := analyse(root, core)
 	if err != nil {
 		return err
@@ -195,6 +204,12 @@ func runPlan(root, core, targetCore, out string, checkUpdates bool) error {
 
 	p := plan.Build(inst, inv, sum, opts)
 
+	if asJSON {
+		if err := report.JSON(os.Stdout, p); err != nil {
+			return err
+		}
+	}
+
 	f, err := os.Create(out)
 	if err != nil {
 		return err
@@ -204,7 +219,9 @@ func runPlan(root, core, targetCore, out string, checkUpdates bool) error {
 		return err
 	}
 
-	reportPlan(p, out, checkUpdates)
+	if !asJSON {
+		reportPlan(p, out, checkUpdates)
+	}
 	return nil
 }
 
@@ -295,109 +312,7 @@ func countIncluded(ws []plan.World) int {
 	return n
 }
 
-func report(inst *foundry.Install, inv *foundry.Inventory, ix *scan.Index, s *scan.Summary, limit int) {
-	fmt.Printf("Installation  %s\n", inst.Root)
-	fmt.Printf("Contents      %d worlds, %d systems, %d modules, %d files\n\n",
-		len(inv.Worlds), len(inv.Systems), len(inv.Modules), ix.Len())
-
-	installed := map[string]bool{}
-	for _, sys := range inv.Systems {
-		installed[sys.ID] = true
-	}
-	fmt.Println("Worlds")
-	for _, w := range inv.Worlds {
-		note := ""
-		if !installed[w.System] {
-			note = "  [system not installed]"
-		}
-		fmt.Printf("  %-36s %-16s core %-8s%s\n", w.ID, w.System+"@"+w.SystemVersion, w.CoreVersion, note)
-	}
-
-	fmt.Printf("\nAssets\n")
-	fmt.Printf("  referenced by documents   %6d files  %10s\n", s.Referenced.Files, humanBytes(s.Referenced.Bytes))
-	fmt.Printf("  inside packages           %6d files  %10s\n", s.Packaged.Files, humanBytes(s.Packaged.Bytes))
-	fmt.Printf("  orphaned                  %6d files  %10s\n", s.Orphans.Files, humanBytes(s.Orphans.Bytes))
-	fmt.Printf("  built into Foundry        %6d refs   (not transferred)\n", s.CoreRefs)
-	fmt.Printf("  transfer total            %6d files  %10s\n",
-		s.Referenced.Files+s.Packaged.Files, humanBytes(s.Referenced.Bytes+s.Packaged.Bytes))
-
-	if len(s.OrphansByDir) > 0 {
-		fmt.Printf("\nOrphaned by directory\n")
-		type row struct {
-			dir string
-			b   scan.Bucket
-		}
-		rows := make([]row, 0, len(s.OrphansByDir))
-		for d, b := range s.OrphansByDir {
-			rows = append(rows, row{d, b})
-		}
-		sort.Slice(rows, func(i, j int) bool { return rows[i].b.Bytes > rows[j].b.Bytes })
-		for i, r := range rows {
-			if i >= limit {
-				fmt.Printf("  ... and %d more\n", len(rows)-limit)
-				break
-			}
-			note := ""
-			if n := s.BrokenByDir[r.dir]; n > 0 {
-				note = fmt.Sprintf("  <- %d broken refs point here", n)
-			}
-			fmt.Printf("  %-30s %6d files  %10s%s\n", r.dir, r.b.Files, humanBytes(r.b.Bytes), note)
-		}
-	}
-
-	if renamed := s.Renamed(); len(renamed) > 0 {
-		fmt.Printf("\nLikely renamed, not junk: %v\n", renamed)
-		fmt.Println("  These directories hold unreferenced files while broken references")
-		fmt.Println("  point into them. Skipping them would migrate broken scenes.")
-	}
-
-	printMissing("Broken references", s.Broken, limit)
-	printMissing("Case-only matches (break on a Linux server)", s.CaseIssues, limit)
-
-	if len(inv.Problems) > 0 {
-		fmt.Printf("\nUnreadable manifests\n")
-		for _, p := range inv.Problems {
-			fmt.Printf("  %s: %s\n", p.Dir, p.Reason)
-		}
-	}
-	fmt.Println("\nNothing was modified.")
-}
-
-func printMissing(title string, list []scan.Missing, limit int) {
-	if len(list) == 0 {
-		return
-	}
-	fmt.Printf("\n%s: %d\n", title, len(list))
-	for i, m := range list {
-		if i >= limit {
-			fmt.Printf("  ... and %d more\n", len(list)-limit)
-			break
-		}
-		fmt.Printf("  %-64s %4d refs  (%s)\n", truncate(m.Path, 64), m.Refs, m.Where)
-	}
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return "..." + s[len(s)-n+3:]
-}
-
-func humanBytes(b int64) string {
-	const unit = 1024
-	if b < unit {
-		return fmt.Sprintf("%d B", b)
-	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
-}
-
-func runVerify(root, core, planPath, to string, deep bool) error {
+func runVerify(root, core, planPath, to string, deep, asJSON bool) error {
 	inst, _, ix, sum, err := analyse(root, core)
 	if err != nil {
 		return err
@@ -430,6 +345,16 @@ func runVerify(root, core, planPath, to string, deep bool) error {
 	res.Worlds, err = verify.Worlds(inst.Data, to)
 	if err != nil {
 		return err
+	}
+
+	if asJSON {
+		if err := report.JSON(os.Stdout, res); err != nil {
+			return err
+		}
+		if !res.OK() {
+			return fmt.Errorf("verification failed")
+		}
+		return nil
 	}
 
 	fmt.Printf("Checked %d files at %s\n", len(expected), to)
