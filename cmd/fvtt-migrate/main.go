@@ -24,6 +24,13 @@ var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
+		if err := runLaunch(); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h" {
 		usage()
 	}
 	if os.Args[1] == "version" {
@@ -33,7 +40,7 @@ func main() {
 
 	cmd := os.Args[1]
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
-	root := fs.String("root", "", "Foundry user-data directory (the one holding Config and Data)")
+	root := fs.String("root", "", "Foundry user-data directory (the one holding Config and Data); found automatically when omitted")
 	core := fs.String("core", "", "Foundry application directory, to recognise built-in assets")
 	limit := fs.Int("limit", 10, "how many entries to show in each list")
 	out := fs.String("out", "plan.yaml", "where to write the plan")
@@ -56,11 +63,16 @@ func main() {
 		usage()
 	}
 	if cmd == "panel" {
-		if *root == "" {
-			fs.Usage()
-			os.Exit(2)
+		at := *root
+		if at == "" {
+			inst, err := foundry.Discover()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error: no Foundry installation found; pass --root")
+				os.Exit(1)
+			}
+			at = inst.Root
 		}
-		if err := runPanel(*root, *core, *listen); err != nil {
+		if err := runPanel(at, *core, *listen); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}

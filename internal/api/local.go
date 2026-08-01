@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	PathPing   = "/api/ping"
 	PathState  = "/api/state"
 	PathPlan   = "/api/plan"
 	PathRun    = "/api/run"
@@ -56,6 +57,9 @@ type Local struct {
 }
 
 func (l *Local) Routes(mux *http.ServeMux) {
+	mux.HandleFunc(PathPing, func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]string{"agent": "fvtt-migrate"})
+	})
 	mux.HandleFunc(PathState, l.state)
 	mux.HandleFunc(PathPlan, l.plan)
 	mux.HandleFunc(PathRun, l.run)

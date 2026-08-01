@@ -42,6 +42,24 @@ Return Foundry to the setup screen before you start. A world that is open is
 being written to, and copying it while it is open damages it. The program checks
 this and refuses rather than producing a broken copy.
 
+## The simplest way
+
+Run the downloaded file by double-clicking it. The program finds your Foundry
+installation, starts the panel and opens it in a browser.
+
+A small window appears with the address of the panel. It can be minimised, and
+closing it stops the panel.
+
+On Windows the first run raises a warning that the program has no publisher
+signature. Choose more information, then run anyway.
+
+If your Foundry installation is in an unusual place, the program says so and
+shows where it looked. The path then has to be given once, with the command in
+the panel section.
+
+Everything else happens in the panel, and the rest of these instructions is for
+people who prefer commands.
+
 ## Step 1. Look at what you have
 
 ```

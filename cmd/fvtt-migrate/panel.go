@@ -18,6 +18,13 @@ import (
 )
 
 func runPanel(root, core, listen string) error {
+	fmt.Printf("Installation   %s\n", root)
+	fmt.Printf("Panel          http://%s/\n\n", listen)
+	fmt.Println("Open that address in a browser. Close this window to stop.")
+	return servePanel(root, core, listen)
+}
+
+func servePanel(root, core, listen string) error {
 	if !api.LocalOnly(listen) {
 		return fmt.Errorf("the panel has no password, so it is only served on this machine. Use --listen 127.0.0.1:7788")
 	}
@@ -44,9 +51,6 @@ func runPanel(root, core, listen string) error {
 	}
 	mux.Handle("/", page)
 
-	fmt.Printf("Installation   %s\n", root)
-	fmt.Printf("Panel          http://%s/\n\n", listen)
-	fmt.Println("Open that address in a browser. Close this window to stop.")
 	return api.Listener(listen, mux).ListenAndServe()
 }
 
