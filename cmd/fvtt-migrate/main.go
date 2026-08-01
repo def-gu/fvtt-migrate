@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"net/http"
+
+	"github.com/def-gu/fvtt-migrate/internal/api"
 	"github.com/def-gu/fvtt-migrate/internal/content"
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
 	"github.com/def-gu/fvtt-migrate/internal/plan"
@@ -37,13 +40,26 @@ func main() {
 	force := fs.Bool("force", false, "copy even while a world is loaded")
 	asJSON := fs.Bool("json", false, "emit machine-readable output instead of text")
 	dryRun := fs.Bool("dry-run", false, "work out what would be transferred without writing anything")
+	listen := fs.String("listen", "127.0.0.1:7788", "address the receiving side listens on")
+	token := fs.String("token", "", "shared token for the receiving side")
 	deep := fs.Bool("deep", false, "re-hash every transferred file at the target")
 
 	switch cmd {
-	case "scan", "plan", "apply", "verify":
+	case "scan", "plan", "apply", "verify", "serve":
 		fs.Parse(os.Args[2:])
 	default:
 		usage()
+	}
+	if cmd == "serve" {
+		if *to == "" {
+			fs.Usage()
+			os.Exit(2)
+		}
+		if err := runServe(*to, *listen, *token); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
 	}
 	if *root == "" {
 		fs.Usage()
@@ -61,7 +77,7 @@ func main() {
 			fs.Usage()
 			os.Exit(2)
 		}
-		err = runApply(*root, *core, *out, *to, *force, *asJSON, *dryRun)
+		err = runApply(*root, *core, *out, *to, *token, *force, *asJSON, *dryRun)
 	case "verify":
 		if *to == "" {
 			fs.Usage()
@@ -75,7 +91,7 @@ func main() {
 	}
 }
 
-func runApply(root, core, planPath, to string, force, asJSON, dryRun bool) error {
+func runApply(root, core, planPath, to, token string, force, asJSON, dryRun bool) error {
 	inst, _, ix, sum, err := analyse(root, core)
 	if err != nil {
 		return err
@@ -132,7 +148,7 @@ func runApply(root, core, planPath, to string, force, asJSON, dryRun bool) error
 	}
 
 	prog, err := transfer.Apply(context.Background(), inst.Data, sel, hashed.Entries,
-		transfer.NewFileTarget(to), transfer.Options{Sink: sink, DryRun: dryRun})
+		newTarget(to, token), transfer.Options{Sink: sink, DryRun: dryRun})
 	if err != nil {
 		return err
 	}
@@ -169,6 +185,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate plan --root <user data> [--core <application dir>] [--out plan.yaml] [--check-updates]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate apply --root <user data> --to <directory> [--out plan.yaml] [--dry-run]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate verify --root <user data> --to <directory> [--deep]")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate serve --to <directory> [--listen 127.0.0.1:7788] [--token ...]")
 	os.Exit(2)
 }
 
@@ -430,4 +447,29 @@ func progressSink(asJSON bool) progress.Sink {
 	default:
 		return progress.Plain(os.Stderr)
 	}
+}
+
+func newTarget(to, token string) transfer.Target {
+	if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
+		return api.NewClient(to, token)
+	}
+	return transfer.NewFileTarget(to)
+}
+
+func runServe(dir, listen, token string) error {
+	if token == "" {
+		token = api.NewToken()
+	}
+	handler, err := api.Handler(transfer.NewReceiver(dir), api.ServeOptions{Root: dir, Token: token})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Receiving into %s\n", dir)
+	fmt.Printf("Panel          http://%s/\n", listen)
+	fmt.Printf("Token          %s\n\n", token)
+	fmt.Println("Send from the other machine with:")
+	fmt.Printf("  fvtt-migrate apply --root <user data> --to http://%s --token %s\n", listen, token)
+
+	return http.ListenAndServe(listen, handler)
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/def-gu/fvtt-migrate/internal/content"
 	"lukechampine.com/blake3"
@@ -17,10 +18,26 @@ const blobDir = ".fvtt-blobs"
 
 type FileTarget struct {
 	Root string
+
+	mu    sync.Mutex
+	index *content.Cache
+	held  map[content.Digest]string
 }
 
 func NewFileTarget(root string) *FileTarget {
-	return &FileTarget{Root: root}
+	return &FileTarget{Root: root, held: map[content.Digest]string{}}
+}
+
+// A receiver that keeps answering for the same directory remembers what it has
+// already placed, so a repeated push does not resend files that are lying in
+// the tree under their final names.
+func NewReceiver(root string) *FileTarget {
+	t := NewFileTarget(root)
+	t.index = content.OpenCache("receiver:" + root)
+	for _, e := range t.index.Entries() {
+		t.held[e.Digest] = e.Path
+	}
+	return t
 }
 
 func (t *FileTarget) blobPath(d content.Digest) (string, error) {
@@ -34,7 +51,7 @@ func (t *FileTarget) blobPath(d content.Digest) (string, error) {
 }
 
 func (t *FileTarget) Missing(_ context.Context, want []content.Digest) ([]content.Digest, error) {
-	var out []content.Digest
+	out := []content.Digest{}
 	seen := map[content.Digest]bool{}
 
 	for _, d := range want {
@@ -47,15 +64,41 @@ func (t *FileTarget) Missing(_ context.Context, want []content.Digest) ([]conten
 		if err != nil {
 			return nil, err
 		}
-		if _, err := os.Stat(p); err != nil {
-			out = append(out, d)
+		if _, err := os.Stat(p); err == nil {
+			continue
 		}
+		if t.placedAt(d) != "" {
+			continue
+		}
+		out = append(out, d)
 	}
 	return out, nil
 }
 
-// The digest is recomputed while writing, so a target that is fed the wrong
-// bytes for a digest rejects them instead of storing them under that name.
+// A remembered path only counts while the file there is untouched, so a receiver
+// that had its tree edited asks for the bytes again instead of trusting itself.
+func (t *FileTarget) placedAt(d content.Digest) string {
+	t.mu.Lock()
+	rel, ok := t.held[d]
+	t.mu.Unlock()
+	if !ok {
+		return ""
+	}
+
+	abs, err := safeJoin(t.Root, rel)
+	if err != nil {
+		return ""
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return ""
+	}
+	if _, fresh := t.index.Lookup(rel, info.Size(), info.ModTime().UnixNano()); !fresh {
+		return ""
+	}
+	return abs
+}
+
 func (t *FileTarget) Put(_ context.Context, d content.Digest, size int64, r io.Reader) error {
 	final, err := t.blobPath(d)
 	if err != nil {
@@ -95,10 +138,6 @@ func (t *FileTarget) Put(_ context.Context, d content.Digest, size int64, r io.R
 }
 
 func (t *FileTarget) Place(_ context.Context, d content.Digest, rel string) error {
-	blob, err := t.blobPath(d)
-	if err != nil {
-		return err
-	}
 	dest, err := safeJoin(t.Root, rel)
 	if err != nil {
 		return err
@@ -107,16 +146,55 @@ func (t *FileTarget) Place(_ context.Context, d content.Digest, rel string) erro
 		return err
 	}
 
+	source, err := t.blobPath(d)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(source); err != nil {
+		if held := t.placedAt(d); held != "" {
+			source = held
+		} else {
+			return fmt.Errorf("no bytes for %s", d)
+		}
+	}
+	if source == dest {
+		t.remember(d, rel, dest)
+		return nil
+	}
+
 	if err := os.Remove(dest); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := os.Link(blob, dest); err == nil {
-		return nil
+	if err := os.Link(source, dest); err != nil {
+		if err := copyFile(source, dest); err != nil {
+			return err
+		}
 	}
-	return copyFile(blob, dest)
+	t.remember(d, rel, dest)
+	return nil
+}
+
+func (t *FileTarget) remember(d content.Digest, rel, abs string) {
+	if t.index == nil {
+		return
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return
+	}
+	t.index.Store(content.Entry{Path: rel, Size: info.Size(), ModTime: info.ModTime().UnixNano(), Digest: d})
+
+	t.mu.Lock()
+	t.held[d] = rel
+	t.mu.Unlock()
 }
 
 func (t *FileTarget) Commit(_ context.Context) error {
+	if t.index != nil {
+		if err := t.index.Save(); err != nil {
+			return err
+		}
+	}
 	return os.RemoveAll(filepath.Join(t.Root, blobDir))
 }
 

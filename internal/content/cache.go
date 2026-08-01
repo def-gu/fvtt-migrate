@@ -58,6 +58,17 @@ func (c *Cache) Lookup(rel string, size, modTime int64) (Entry, bool) {
 	return e, true
 }
 
+func (c *Cache) Entries() []Entry {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	out := make([]Entry, 0, len(c.entries))
+	for _, e := range c.entries {
+		out = append(out, e)
+	}
+	return out
+}
+
 func (c *Cache) Store(e Entry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
