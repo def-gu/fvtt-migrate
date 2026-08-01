@@ -60,9 +60,12 @@ type Directory struct {
 	Broken int    `yaml:"broken_references_into_it,omitempty"`
 }
 
-func Build(inst *foundry.Install, inv *foundry.Inventory, sum *scan.Summary, targetCore string, cache Cache) *Plan {
+func Build(inst *foundry.Install, inv *foundry.Inventory, sum *scan.Summary, opts Options) *Plan {
+	opts.ObservedCore = highestCore(inv)
+	targetCore := opts.TargetCore
 	if targetCore == "" {
-		targetCore = highestCore(inv)
+		targetCore = opts.ObservedCore
+		opts.TargetCore = targetCore
 	}
 
 	installed := map[string]bool{}
@@ -78,7 +81,7 @@ func Build(inst *foundry.Install, inv *foundry.Inventory, sum *scan.Summary, tar
 			TargetCore:  targetCore,
 			PackageMode: PolicyPin,
 		},
-		Packages: ResolvePackages(inv, targetCore, highestCore(inv), cache),
+		Packages: ResolvePackages(inv, opts),
 		Assets: Assets{
 			Referenced: Bucket{sum.Referenced.Files, sum.Referenced.Bytes},
 			Packaged:   Bucket{sum.Packaged.Files, sum.Packaged.Bytes},

@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -149,6 +150,9 @@ func (c *Checker) fetch(ctx context.Context, kind foundry.Kind, url string) (*fo
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestBytes))
 	if err != nil {
 		return nil, err
+	}
+	if !bytes.HasPrefix(bytes.TrimSpace(body), []byte("{")) {
+		return nil, errors.New("served a web page, not a manifest")
 	}
 	return foundry.ParseManifest(kind, body)
 }

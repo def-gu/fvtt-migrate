@@ -29,7 +29,7 @@ func testInputs() (*foundry.Install, *foundry.Inventory, *scan.Summary) {
 
 func buildDefault() *Plan {
 	inst, inv, sum := testInputs()
-	return Build(inst, inv, sum, "", nil)
+	return Build(inst, inv, sum, Options{})
 }
 
 func TestBuildBlocksWorldWithMissingSystem(t *testing.T) {
@@ -67,7 +67,7 @@ func TestTargetCoreDefaultsToHighestSeen(t *testing.T) {
 	inst, inv, sum := testInputs()
 	inv.Worlds[1].CoreVersion = "14.363"
 
-	if got := Build(inst, inv, sum, "", nil).Source.TargetCore; got != "14.363" {
+	if got := Build(inst, inv, sum, Options{}).Source.TargetCore; got != "14.363" {
 		t.Errorf("target core = %q, want 14.363", got)
 	}
 }

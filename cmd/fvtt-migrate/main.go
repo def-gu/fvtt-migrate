@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
 	"github.com/def-gu/fvtt-migrate/internal/plan"
 	"github.com/def-gu/fvtt-migrate/internal/scan"
+	"github.com/def-gu/fvtt-migrate/internal/upstream"
 )
 
 func main() {
@@ -23,6 +27,7 @@ func main() {
 	limit := fs.Int("limit", 10, "how many entries to show in each list")
 	out := fs.String("out", "plan.yaml", "where to write the plan")
 	targetCore := fs.String("target-core", "", "Foundry version the plan targets (default: highest found)")
+	checkUpdates := fs.Bool("check-updates", false, "read upstream manifests; without it nothing leaves this machine")
 
 	switch cmd {
 	case "scan", "plan":
@@ -39,7 +44,7 @@ func main() {
 	if cmd == "scan" {
 		err = runScan(*root, *core, *limit)
 	} else {
-		err = runPlan(*root, *core, *targetCore, *out)
+		err = runPlan(*root, *core, *targetCore, *out, *checkUpdates)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -50,7 +55,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate scan --root <user data> [--core <application dir>]")
-	fmt.Fprintln(os.Stderr, "  fvtt-migrate plan --root <user data> [--core <application dir>] [--out plan.yaml]")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate plan --root <user data> [--core <application dir>] [--out plan.yaml] [--check-updates]")
 	os.Exit(2)
 }
 
@@ -88,15 +93,22 @@ func runScan(root, core string, limit int) error {
 	return nil
 }
 
-func runPlan(root, core, targetCore, out string) error {
+func runPlan(root, core, targetCore, out string, checkUpdates bool) error {
 	inst, inv, _, sum, err := analyse(root, core)
 	if err != nil {
 		return err
 	}
 
-	// Resolution runs offline: scan and plan never touch the network, so a
-	// cache hit cannot be claimed here.
-	p := plan.Build(inst, inv, sum, targetCore, nil)
+	opts := plan.Options{TargetCore: targetCore}
+	if checkUpdates {
+		pkgs := append(append([]foundry.Package{}, inv.Systems...), inv.Modules...)
+		fmt.Fprintf(os.Stderr, "reading %d upstream manifests...\n", len(pkgs))
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		opts.Updates = upstream.New().CheckAll(ctx, pkgs)
+	}
+
+	p := plan.Build(inst, inv, sum, opts)
 
 	f, err := os.Create(out)
 	if err != nil {
@@ -107,17 +119,85 @@ func runPlan(root, core, targetCore, out string) error {
 		return err
 	}
 
-	byPolicy := map[plan.Source]int{}
-	for _, pkg := range p.Packages {
-		byPolicy[pkg.Source]++
-	}
-	fmt.Printf("Wrote %s\n", out)
-	fmt.Printf("  target Foundry %s\n", p.Source.TargetCore)
-	fmt.Printf("  packages: %d fetchable by manifest, %d to upload\n",
-		byPolicy[plan.FromManifest], byPolicy[plan.FromUpload])
-	fmt.Printf("  worlds: %d included, %d blocked\n", countIncluded(p.Worlds), len(p.Worlds)-countIncluded(p.Worlds))
-	fmt.Println("\nReview and edit the plan before applying it. Nothing was modified.")
+	reportPlan(p, out, checkUpdates)
 	return nil
+}
+
+func reportPlan(p *plan.Plan, out string, checked bool) {
+	bySource := map[plan.Source]int{}
+	byAdvice := map[plan.Recommendation][]plan.Package{}
+	for _, pkg := range p.Packages {
+		bySource[pkg.Source]++
+		byAdvice[pkg.Recommend] = append(byAdvice[pkg.Recommend], pkg)
+	}
+
+	fmt.Printf("Wrote %s\n\n", out)
+	fmt.Printf("Target Foundry %s\n", p.Source.TargetCore)
+	fmt.Printf("Packages       %d from manifest, %d to upload, %d already on target\n\n",
+		bySource[plan.FromManifest], bySource[plan.FromUpload], bySource[plan.FromCache])
+	fmt.Printf("Worlds         %d included, %d blocked\n", countIncluded(p.Worlds), len(p.Worlds)-countIncluded(p.Worlds))
+	for _, w := range p.Worlds {
+		if w.Blocker != "" {
+			fmt.Printf("  blocked: %-34s %s\n", w.ID, w.Blocker)
+		}
+	}
+
+	if !checked {
+		fmt.Println("\nUpstream was not contacted. Re-run with --check-updates to see what is available.")
+	} else {
+		section("Must be updated to run on the target", byAdvice[plan.Required], true)
+		section("Worth taking: still works now and is ready for the next generation", widening(byAdvice[plan.Upgrade]), true)
+		section("Updates that would drop the target version, left pinned", byAdvice[plan.Keep], false)
+		section("Nothing available runs on the target", byAdvice[plan.Blocked], true)
+	}
+
+	manual := manualCheck(p.Packages)
+	if len(manual) > 0 {
+		fmt.Printf("\nNeeds a human eye: %d\n", len(manual))
+		for _, pkg := range manual {
+			fmt.Printf("  %-34s %-10s %s\n", pkg.ID, pkg.Version, pkg.Reason)
+		}
+	}
+
+	fmt.Println("\nReview and edit the plan before applying it. Nothing was modified.")
+}
+
+func section(title string, pkgs []plan.Package, detailed bool) {
+	if len(pkgs) == 0 {
+		return
+	}
+	fmt.Printf("\n%s: %d\n", title, len(pkgs))
+	if !detailed {
+		var names []string
+		for _, p := range pkgs {
+			names = append(names, p.ID)
+		}
+		fmt.Printf("  %s\n", strings.Join(names, ", "))
+		return
+	}
+	for _, p := range pkgs {
+		fmt.Printf("  %-34s %-10s -> %-10s (%s)\n", p.ID, p.Version, p.Available, p.CompatAvailable)
+	}
+}
+
+func widening(pkgs []plan.Package) []plan.Package {
+	var out []plan.Package
+	for _, p := range pkgs {
+		if p.Widens {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func manualCheck(pkgs []plan.Package) []plan.Package {
+	var out []plan.Package
+	for _, p := range pkgs {
+		if p.Source == plan.FromUpload && !p.Premium {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func countIncluded(ws []plan.World) int {
