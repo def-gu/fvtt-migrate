@@ -27,9 +27,14 @@ stopped.
 
 ## Status
 
-Early development, though `scan`, `plan` and `apply` work end to end against a
-real installation. The licence key and the admin password hash are never read,
-copied or transferred.
+Early development, though `scan`, `plan`, `apply` and `verify` work end to end
+against a real installation. The licence key and the admin password hash are
+never read, copied or transferred, and a test asserts it.
+
+## Licence
+
+GNU GPL v3. The tool is meant to be run against your own campaign data, so you
+are entitled to read what it does with it.
 
 ## Building
 
