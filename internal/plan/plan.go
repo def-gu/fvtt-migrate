@@ -114,6 +114,7 @@ type Directory struct {
 	Bytes  int64  `yaml:"bytes" json:"bytes"`
 	Action string `yaml:"action" json:"action"`
 	Note   string `yaml:"note,omitempty" json:"note,omitempty"`
+	Stale  bool   `yaml:"looks_stale,omitempty" json:"looks_stale,omitempty"`
 	Broken int    `yaml:"broken_references_into_it,omitempty" json:"broken_references_into_it,omitempty"`
 }
 
@@ -177,6 +178,7 @@ func Build(inst *foundry.Install, inv *foundry.Inventory, sum *scan.Summary, opt
 			Broken: sum.BrokenByDir[dir],
 		}
 		if renamed[dir] {
+			d.Stale = true
 			d.Action = "include"
 			d.Note = "unreferenced, but broken references point here: paths look stale, not unused"
 		}
