@@ -1,6 +1,9 @@
 package transfer
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -13,7 +16,7 @@ type Selection struct {
 	Bytes int64
 }
 
-func Select(p *plan.Plan, ix *scan.Index, sum *scan.Summary) Selection {
+func Select(p *plan.Plan, dataRoot string, ix *scan.Index, sum *scan.Summary) (Selection, error) {
 	worlds := map[string]bool{}
 	for _, w := range p.Worlds {
 		if w.Include {
@@ -42,8 +45,42 @@ func Select(p *plan.Plan, ix *scan.Index, sum *scan.Summary) Selection {
 		sel.Paths = append(sel.Paths, rel)
 		sel.Bytes += size
 	})
+
+	// The asset index deliberately omits world databases, which hold documents
+	// rather than assets. They still have to travel, or the target gets worlds
+	// with no contents at all.
+	for id := range worlds {
+		if err := appendWorldDatabase(dataRoot, id, &sel); err != nil {
+			return sel, err
+		}
+	}
+
 	sort.Strings(sel.Paths)
-	return sel
+	return sel, nil
+}
+
+func appendWorldDatabase(dataRoot, worldID string, sel *Selection) error {
+	base := filepath.Join(dataRoot, "worlds", worldID, "data")
+	if _, err := os.Stat(base); os.IsNotExist(err) {
+		return nil
+	}
+
+	return filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(dataRoot, p)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		sel.Paths = append(sel.Paths, filepath.ToSlash(rel))
+		sel.Bytes += info.Size()
+		return nil
+	})
 }
 
 func include(rel string, worlds, upload map[string]bool, dirs map[string]bool, sum *scan.Summary) bool {

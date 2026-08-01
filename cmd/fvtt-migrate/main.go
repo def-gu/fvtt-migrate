@@ -9,9 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/def-gu/fvtt-migrate/internal/content"
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
 	"github.com/def-gu/fvtt-migrate/internal/plan"
 	"github.com/def-gu/fvtt-migrate/internal/scan"
+	"github.com/def-gu/fvtt-migrate/internal/transfer"
 	"github.com/def-gu/fvtt-migrate/internal/upstream"
 )
 
@@ -29,8 +31,10 @@ func main() {
 	targetCore := fs.String("target-core", "", "Foundry version the plan targets (default: highest found)")
 	checkUpdates := fs.Bool("check-updates", false, "read upstream manifests; without it nothing leaves this machine")
 
+	to := fs.String("to", "", "directory to migrate into")
+
 	switch cmd {
-	case "scan", "plan":
+	case "scan", "plan", "apply":
 		fs.Parse(os.Args[2:])
 	default:
 		usage()
@@ -41,10 +45,17 @@ func main() {
 	}
 
 	var err error
-	if cmd == "scan" {
+	switch cmd {
+	case "scan":
 		err = runScan(*root, *core, *limit)
-	} else {
+	case "plan":
 		err = runPlan(*root, *core, *targetCore, *out, *checkUpdates)
+	case "apply":
+		if *to == "" {
+			fs.Usage()
+			os.Exit(2)
+		}
+		err = runApply(*root, *core, *out, *to)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -52,10 +63,60 @@ func main() {
 	}
 }
 
+func runApply(root, core, planPath, to string) error {
+	inst, _, ix, sum, err := analyse(root, core)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(planPath)
+	if err != nil {
+		return err
+	}
+	p, err := plan.Read(f)
+	f.Close()
+	if err != nil {
+		return err
+	}
+
+	sel, err := transfer.Select(p, inst.Data, ix, sum)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Selected %d files, %s\n", len(sel.Paths), humanBytes(sel.Bytes))
+
+	cache := content.OpenCache(inst.Root)
+	hashed := content.HashTree(inst.Data, sel.Paths, cache, 0)
+	if err := cache.Save(); err != nil {
+		return err
+	}
+	if len(hashed.Errors) > 0 {
+		for rel, e := range hashed.Errors {
+			fmt.Fprintf(os.Stderr, "  unreadable: %s: %v\n", rel, e)
+		}
+		return fmt.Errorf("%d files could not be read", len(hashed.Errors))
+	}
+	fmt.Printf("Hashed %d files, reused %d cached digests\n", hashed.Hashed, hashed.Reused)
+
+	prog, err := transfer.Apply(context.Background(), inst.Data, sel, hashed.Entries,
+		transfer.NewFileTarget(to), transfer.Options{})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\nUnique blobs   %d\n", prog.Negotiated)
+	fmt.Printf("Transferred    %d blobs, %s\n", prog.Uploaded, humanBytes(prog.UploadedByte))
+	fmt.Printf("Already there  %d blobs, %s not sent\n", prog.Skipped, humanBytes(prog.SkippedByte))
+	fmt.Printf("Placed         %d files under %s\n", prog.Placed, to)
+	fmt.Println("\nThe source installation was not modified.")
+	return nil
+}
+
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate scan --root <user data> [--core <application dir>]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate plan --root <user data> [--core <application dir>] [--out plan.yaml] [--check-updates]")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate apply --root <user data> --to <directory> [--out plan.yaml]")
 	os.Exit(2)
 }
 
