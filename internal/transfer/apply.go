@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/def-gu/fvtt-migrate/internal/content"
+	"github.com/def-gu/fvtt-migrate/internal/progress"
 )
 
 type Progress struct {
@@ -21,8 +22,8 @@ type Progress struct {
 }
 
 type Options struct {
-	Workers  int
-	OnUpload func(rel string, size int64)
+	Workers int
+	Sink    progress.Sink
 }
 
 func Apply(ctx context.Context, sourceRoot string, sel Selection, digests map[string]content.Entry, tgt Target, opts Options) (*Progress, error) {
@@ -45,6 +46,7 @@ func Apply(ctx context.Context, sourceRoot string, sel Selection, digests map[st
 		}
 	}
 
+	progress.Emit(opts.Sink, progress.Event{Phase: progress.PhaseNegotiating, Total: int64(len(want))})
 	missing, err := tgt.Missing(ctx, want)
 	if err != nil {
 		return nil, err
@@ -70,6 +72,11 @@ func Apply(ctx context.Context, sourceRoot string, sel Selection, digests map[st
 			return prog, fmt.Errorf("place %s: %w", rel, err)
 		}
 		prog.Placed++
+		progress.Emit(opts.Sink, progress.Event{
+			Phase: progress.PhasePlacing,
+			Done:  int64(prog.Placed),
+			Total: int64(len(sel.Paths)),
+		})
 	}
 	return prog, tgt.Commit(ctx)
 }
@@ -96,10 +103,15 @@ func uploadAll(ctx context.Context, root string, missing []content.Digest, byDig
 				mu.Lock()
 				prog.Uploaded++
 				prog.UploadedByte += e.Size
+				done, sent := int64(prog.Uploaded), prog.UploadedByte
 				mu.Unlock()
-				if opts.OnUpload != nil {
-					opts.OnUpload(e.Path, e.Size)
-				}
+				progress.Emit(opts.Sink, progress.Event{
+					Phase:  progress.PhaseTransferring,
+					Done:   done,
+					Total:  int64(len(missing)),
+					Bytes:  sent,
+					Detail: e.Path,
+				})
 			}
 		}()
 	}

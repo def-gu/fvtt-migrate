@@ -11,6 +11,7 @@ import (
 	"github.com/def-gu/fvtt-migrate/internal/content"
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
 	"github.com/def-gu/fvtt-migrate/internal/plan"
+	"github.com/def-gu/fvtt-migrate/internal/progress"
 	"github.com/def-gu/fvtt-migrate/internal/report"
 	"github.com/def-gu/fvtt-migrate/internal/scan"
 	"github.com/def-gu/fvtt-migrate/internal/transfer"
@@ -89,21 +90,25 @@ func runApply(root, core, planPath, to string, force, asJSON bool) error {
 		return err
 	}
 
+	sink := progressSink(asJSON)
 	if live := inst.Liveness(); live.ActiveWorld != "" && !force {
 		return fmt.Errorf("world %q is loaded in Foundry; copying an open database corrupts it. "+
 			"Return Foundry to setup, or pass --force to copy anyway", live.ActiveWorld)
 	} else if live.ServerRunning {
-		fmt.Fprintln(os.Stderr, "note: Foundry is running with no world loaded, which is safe to copy")
+		progress.Note(sink, "foundry.running.no_world",
+			"Foundry is running with no world loaded, which is safe to copy", nil)
 	}
 
 	sel, err := transfer.Select(p, inst.Data, ix, sum)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Selected %d files, %s\n", len(sel.Paths), report.Bytes(sel.Bytes))
+	if !asJSON {
+		fmt.Printf("Selected %d files, %s\n", len(sel.Paths), report.Bytes(sel.Bytes))
+	}
 
 	cache := content.OpenCache(inst.Root)
-	hashed := content.HashTree(inst.Data, sel.Paths, cache, 0)
+	hashed := content.HashTreeWithProgress(inst.Data, sel.Paths, cache, 0, sink)
 	if err := cache.Save(); err != nil {
 		return err
 	}
@@ -113,10 +118,12 @@ func runApply(root, core, planPath, to string, force, asJSON bool) error {
 		}
 		return fmt.Errorf("%d files could not be read", len(hashed.Errors))
 	}
-	fmt.Printf("Hashed %d files, reused %d cached digests\n", hashed.Hashed, hashed.Reused)
+	if !asJSON {
+		fmt.Printf("Hashed %d files, reused %d cached digests\n", hashed.Hashed, hashed.Reused)
+	}
 
 	prog, err := transfer.Apply(context.Background(), inst.Data, sel, hashed.Entries,
-		transfer.NewFileTarget(to), transfer.Options{})
+		transfer.NewFileTarget(to), transfer.Options{Sink: sink})
 	if err != nil {
 		return err
 	}
@@ -333,7 +340,7 @@ func runVerify(root, core, planPath, to string, deep, asJSON bool) error {
 		return err
 	}
 	cache := content.OpenCache(inst.Root)
-	expected := content.HashTree(inst.Data, sel.Paths, cache, 0).Entries
+	expected := content.HashTreeWithProgress(inst.Data, sel.Paths, cache, 0, progressSink(asJSON)).Entries
 	if err := cache.Save(); err != nil {
 		return err
 	}
@@ -394,4 +401,13 @@ func runVerify(root, core, planPath, to string, deep, asJSON bool) error {
 	}
 	fmt.Println("\nEverything the plan selected is present and reads back identically.")
 	return nil
+}
+
+// Machine-readable runs stream events as JSON lines on stderr, leaving stdout
+// for the single result document. Terminal runs get one rewriting line.
+func progressSink(asJSON bool) progress.Sink {
+	if asJSON {
+		return progress.Lines(os.Stderr)
+	}
+	return progress.Ticker(os.Stderr)
 }

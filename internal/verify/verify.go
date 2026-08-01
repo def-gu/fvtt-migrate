@@ -44,7 +44,8 @@ func (r *Result) OK() bool {
 // Files reports paths absent from the target, and with deep set, paths whose
 // bytes no longer hash to what was sent.
 func Files(targetData string, expected map[string]content.Entry, deep bool) (*Result, error) {
-	res := &Result{}
+	// Empty means empty, not null: a consumer should never have to null-check.
+	res := &Result{Missing: []string{}, Mismatch: []string{}, Worlds: []WorldCheck{}}
 
 	for rel, e := range expected {
 		abs := filepath.Join(targetData, filepath.FromSlash(rel))

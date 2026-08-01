@@ -69,7 +69,11 @@ func BuildScan(inst *foundry.Install, inv *foundry.Inventory, ix *scan.Index, s 
 	}
 
 	out := &Scan{
-		Root: inst.Root,
+		Root:     inst.Root,
+		Worlds:   []World{},
+		Broken:   []Missing{},
+		CaseOnly: []Missing{},
+		Problems: []Problem{},
 		Counts: Counts{
 			Worlds:  len(inv.Worlds),
 			Systems: len(inv.Systems),
@@ -77,10 +81,11 @@ func BuildScan(inst *foundry.Install, inv *foundry.Inventory, ix *scan.Index, s 
 			Files:   ix.Len(),
 		},
 		Assets: Assets{
-			Referenced: Bucket{s.Referenced.Files, s.Referenced.Bytes},
-			Packaged:   Bucket{s.Packaged.Files, s.Packaged.Bytes},
-			Orphaned:   Bucket{s.Orphans.Files, s.Orphans.Bytes},
-			CoreRefs:   s.CoreRefs,
+			Directories: []Directory{},
+			Referenced:  Bucket{s.Referenced.Files, s.Referenced.Bytes},
+			Packaged:    Bucket{s.Packaged.Files, s.Packaged.Bytes},
+			Orphaned:    Bucket{s.Orphans.Files, s.Orphans.Bytes},
+			CoreRefs:    s.CoreRefs,
 		},
 	}
 

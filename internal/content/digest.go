@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/def-gu/fvtt-migrate/internal/progress"
 	"lukechampine.com/blake3"
 )
 
@@ -42,6 +43,10 @@ func HashFile(path string) (Digest, error) {
 }
 
 func HashTree(root string, rels []string, cache *Cache, workers int) *Result {
+	return HashTreeWithProgress(root, rels, cache, workers, nil)
+}
+
+func HashTreeWithProgress(root string, rels []string, cache *Cache, workers int, sink progress.Sink) *Result {
 	if workers <= 0 {
 		workers = runtime.NumCPU()
 	}
@@ -70,6 +75,7 @@ func HashTree(root string, rels []string, cache *Cache, workers int) *Result {
 					res.Entries[rel] = hit
 					res.Reused++
 					mu.Unlock()
+					report(sink, res, &mu, len(rels))
 					continue
 				}
 
@@ -87,6 +93,7 @@ func HashTree(root string, rels []string, cache *Cache, workers int) *Result {
 				res.Hashed++
 				mu.Unlock()
 				cache.Store(e)
+				report(sink, res, &mu, len(rels))
 			}
 		}()
 	}
@@ -97,4 +104,14 @@ func HashTree(root string, rels []string, cache *Cache, workers int) *Result {
 	close(jobs)
 	wg.Wait()
 	return res
+}
+
+func report(sink progress.Sink, res *Result, mu *sync.Mutex, total int) {
+	if sink == nil {
+		return
+	}
+	mu.Lock()
+	done := int64(res.Hashed + res.Reused)
+	mu.Unlock()
+	progress.Emit(sink, progress.Event{Phase: progress.PhaseHashing, Done: done, Total: int64(total)})
 }
