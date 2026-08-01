@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"time"
 )
@@ -10,6 +11,21 @@ import (
 type ServeOptions struct {
 	Root  string
 	Token string
+	Panel bool
+}
+
+// The panel carries no authentication of its own, so it is served only where
+// reaching it already means being on this machine.
+func LocalOnly(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	switch host {
+	case "", "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return net.ParseIP(host).IsLoopback()
 }
 
 func NewToken() string {
@@ -24,11 +40,13 @@ func Handler(target Target, opts ServeOptions) (http.Handler, error) {
 	srv := &Server{Target: target, Root: opts.Root, Token: opts.Token}
 	srv.Routes(mux)
 
-	panel, err := Panel()
-	if err != nil {
-		return nil, err
+	if opts.Panel {
+		panel, err := Panel()
+		if err != nil {
+			return nil, err
+		}
+		mux.Handle("/", panel)
 	}
-	mux.Handle("/", panel)
 	return mux, nil
 }
 

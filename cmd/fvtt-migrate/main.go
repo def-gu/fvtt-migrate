@@ -479,13 +479,18 @@ func runServe(dir, listen, token string) error {
 	if token == "" {
 		token = api.NewToken()
 	}
-	handler, err := api.Handler(transfer.NewReceiver(dir), api.ServeOptions{Root: dir, Token: token})
+	local := api.LocalOnly(listen)
+	handler, err := api.Handler(transfer.NewReceiver(dir), api.ServeOptions{Root: dir, Token: token, Panel: local})
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("Receiving into %s\n", dir)
-	fmt.Printf("Panel          http://%s/\n", listen)
+	if local {
+		fmt.Printf("Panel          http://%s/\n", listen)
+	} else {
+		fmt.Printf("Panel          not served: %s is reachable from elsewhere\n", listen)
+	}
 	fmt.Printf("Token          %s\n\n", token)
 	fmt.Println("Send from the other machine with:")
 	fmt.Printf("  fvtt-migrate apply --root <user data> --to http://%s --token %s\n", listen, token)
