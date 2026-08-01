@@ -2,11 +2,13 @@ package transfer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
+	"github.com/def-gu/fvtt-migrate/internal/api"
 	"github.com/def-gu/fvtt-migrate/internal/content"
 	"github.com/def-gu/fvtt-migrate/internal/progress"
 )
@@ -146,6 +148,23 @@ func uploadAll(ctx context.Context, root string, missing []content.Digest, byDig
 }
 
 func upload(ctx context.Context, root string, e content.Entry, tgt Target) error {
+	var last error
+	for attempt := 0; attempt < api.Attempts; attempt++ {
+		last = putOnce(ctx, root, e, tgt)
+		var transient *api.Transient
+		if last == nil || !errors.As(last, &transient) {
+			return last
+		}
+		if attempt+1 < api.Attempts {
+			if err := api.Wait(ctx, attempt); err != nil {
+				return err
+			}
+		}
+	}
+	return last
+}
+
+func putOnce(ctx context.Context, root string, e content.Entry, tgt Target) error {
 	f, err := os.Open(filepath.Join(root, filepath.FromSlash(e.Path)))
 	if err != nil {
 		return err

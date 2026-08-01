@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"net/http"
-
 	"github.com/def-gu/fvtt-migrate/internal/api"
 	"github.com/def-gu/fvtt-migrate/internal/content"
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
@@ -41,7 +39,8 @@ func main() {
 	asJSON := fs.Bool("json", false, "emit machine-readable output instead of text")
 	dryRun := fs.Bool("dry-run", false, "work out what would be transferred without writing anything")
 	listen := fs.String("listen", "127.0.0.1:7788", "address the receiving side listens on")
-	token := fs.String("token", "", "shared token for the receiving side")
+	token := fs.String("token", "", "shared token; prefer the FVTT_MIGRATE_TOKEN variable, since arguments are visible to other users")
+	insecure := fs.Bool("insecure", false, "allow plain HTTP to a remote host")
 	deep := fs.Bool("deep", false, "re-hash every transferred file at the target")
 
 	switch cmd {
@@ -55,7 +54,7 @@ func main() {
 			fs.Usage()
 			os.Exit(2)
 		}
-		if err := runServe(*to, *listen, *token); err != nil {
+		if err := runServe(*to, *listen, tokenFrom(*token)); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
@@ -77,7 +76,7 @@ func main() {
 			fs.Usage()
 			os.Exit(2)
 		}
-		err = runApply(*root, *core, *out, *to, *token, *force, *asJSON, *dryRun)
+		err = runApply(*root, *core, *out, *to, tokenFrom(*token), *force, *asJSON, *dryRun, *insecure)
 	case "verify":
 		if *to == "" {
 			fs.Usage()
@@ -91,7 +90,7 @@ func main() {
 	}
 }
 
-func runApply(root, core, planPath, to, token string, force, asJSON, dryRun bool) error {
+func runApply(root, core, planPath, to, token string, force, asJSON, dryRun, insecure bool) error {
 	inst, _, ix, sum, err := analyse(root, core)
 	if err != nil {
 		return err
@@ -105,6 +104,15 @@ func runApply(root, core, planPath, to, token string, force, asJSON, dryRun bool
 	f.Close()
 	if err != nil {
 		return err
+	}
+
+	if isRemote(to) {
+		if err := api.CheckAddress(to, insecure); err != nil {
+			return err
+		}
+		if token == "" {
+			return fmt.Errorf("a token is required for a remote target; set FVTT_MIGRATE_TOKEN")
+		}
 	}
 
 	findings := p.Validate()
@@ -449,11 +457,22 @@ func progressSink(asJSON bool) progress.Sink {
 	}
 }
 
+func isRemote(to string) bool {
+	return strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://")
+}
+
 func newTarget(to, token string) transfer.Target {
-	if strings.HasPrefix(to, "http://") || strings.HasPrefix(to, "https://") {
+	if isRemote(to) {
 		return api.NewClient(to, token)
 	}
 	return transfer.NewFileTarget(to)
+}
+
+func tokenFrom(flag string) string {
+	if v := os.Getenv("FVTT_MIGRATE_TOKEN"); v != "" {
+		return v
+	}
+	return flag
 }
 
 func runServe(dir, listen, token string) error {
@@ -471,5 +490,5 @@ func runServe(dir, listen, token string) error {
 	fmt.Println("Send from the other machine with:")
 	fmt.Printf("  fvtt-migrate apply --root <user data> --to http://%s --token %s\n", listen, token)
 
-	return http.ListenAndServe(listen, handler)
+	return api.Listener(listen, handler).ListenAndServe()
 }

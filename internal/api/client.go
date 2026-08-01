@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/def-gu/fvtt-migrate/internal/content"
@@ -26,6 +28,23 @@ func NewClient(base, token string) *Client {
 		Token: token,
 		HTTP:  &http.Client{},
 	}
+}
+
+// A token sent over plain HTTP to anything but this machine is a token given
+// away, so that combination is refused rather than warned about.
+func CheckAddress(base string, allowInsecure bool) error {
+	u, err := url.Parse(base)
+	if err != nil {
+		return fmt.Errorf("cannot read the address %q", base)
+	}
+	if u.Scheme == "https" || allowInsecure {
+		return nil
+	}
+	host := u.Hostname()
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return nil
+	}
+	return fmt.Errorf("%s sends the token in the clear. Use https, or pass --insecure if the network is trusted", base)
 }
 
 func (t *Client) Hello(ctx context.Context) (*Hello, error) {
@@ -79,11 +98,19 @@ func (t *Client) Put(ctx context.Context, d content.Digest, size int64, r io.Rea
 
 	resp, err := t.HTTP.Do(req)
 	if err != nil {
-		return err
+		return &Transient{Err: err}
 	}
 	defer resp.Body.Close()
+	if Retryable(nil, resp.StatusCode) {
+		return &Transient{Err: expect(resp, http.StatusNoContent)}
+	}
 	return expect(resp, http.StatusNoContent)
 }
+
+type Transient struct{ Err error }
+
+func (t *Transient) Error() string { return t.Err.Error() }
+func (t *Transient) Unwrap() error { return t.Err }
 
 func (t *Client) Place(ctx context.Context, d content.Digest, rel string) error {
 	return t.call(ctx, http.MethodPost, PathPlace, PlaceRequest{Digest: d, Path: rel}, nil)
@@ -94,6 +121,23 @@ func (t *Client) Commit(ctx context.Context) error {
 }
 
 func (t *Client) call(ctx context.Context, method, path string, body, out any) error {
+	var last error
+	for attempt := 0; attempt < Attempts; attempt++ {
+		last = t.callOnce(ctx, method, path, body, out)
+		var transient *Transient
+		if !errors.As(last, &transient) {
+			return last
+		}
+		if attempt+1 < Attempts {
+			if err := Wait(ctx, attempt); err != nil {
+				return err
+			}
+		}
+	}
+	return last
+}
+
+func (t *Client) callOnce(ctx context.Context, method, path string, body, out any) error {
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -114,9 +158,13 @@ func (t *Client) call(ctx context.Context, method, path string, body, out any) e
 
 	resp, err := t.HTTP.Do(req)
 	if err != nil {
-		return err
+		return &Transient{Err: err}
 	}
 	defer resp.Body.Close()
+
+	if Retryable(nil, resp.StatusCode) {
+		return &Transient{Err: expect(resp, http.StatusOK)}
+	}
 
 	want := http.StatusOK
 	if out == nil {
