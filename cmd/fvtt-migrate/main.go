@@ -15,6 +15,7 @@ import (
 	"github.com/def-gu/fvtt-migrate/internal/scan"
 	"github.com/def-gu/fvtt-migrate/internal/transfer"
 	"github.com/def-gu/fvtt-migrate/internal/upstream"
+	"github.com/def-gu/fvtt-migrate/internal/verify"
 )
 
 func main() {
@@ -33,9 +34,10 @@ func main() {
 
 	to := fs.String("to", "", "directory to migrate into")
 	force := fs.Bool("force", false, "copy even while a world is loaded")
+	deep := fs.Bool("deep", false, "re-hash every transferred file at the target")
 
 	switch cmd {
-	case "scan", "plan", "apply":
+	case "scan", "plan", "apply", "verify":
 		fs.Parse(os.Args[2:])
 	default:
 		usage()
@@ -57,6 +59,12 @@ func main() {
 			os.Exit(2)
 		}
 		err = runApply(*root, *core, *out, *to, *force)
+	case "verify":
+		if *to == "" {
+			fs.Usage()
+			os.Exit(2)
+		}
+		err = runVerify(*root, *core, *out, *to, *deep)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -132,6 +140,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate scan --root <user data> [--core <application dir>]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate plan --root <user data> [--core <application dir>] [--out plan.yaml] [--check-updates]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate apply --root <user data> --to <directory> [--out plan.yaml]")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate verify --root <user data> --to <directory> [--deep]")
 	os.Exit(2)
 }
 
@@ -386,4 +395,78 @@ func humanBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+func runVerify(root, core, planPath, to string, deep bool) error {
+	inst, _, ix, sum, err := analyse(root, core)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(planPath)
+	if err != nil {
+		return err
+	}
+	p, err := plan.Read(f)
+	f.Close()
+	if err != nil {
+		return err
+	}
+
+	sel, err := transfer.Select(p, inst.Data, ix, sum)
+	if err != nil {
+		return err
+	}
+	cache := content.OpenCache(inst.Root)
+	expected := content.HashTree(inst.Data, sel.Paths, cache, 0).Entries
+	if err := cache.Save(); err != nil {
+		return err
+	}
+
+	res, err := verify.Files(to, expected, deep)
+	if err != nil {
+		return err
+	}
+	res.Worlds, err = verify.Worlds(inst.Data, to)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Checked %d files at %s\n", len(expected), to)
+	if deep {
+		fmt.Printf("  re-hashed %d\n", res.Rehashed)
+	}
+	report := func(title string, list []string) {
+		if len(list) == 0 {
+			return
+		}
+		fmt.Printf("\n%s: %d\n", title, len(list))
+		for i, rel := range list {
+			if i >= 10 {
+				fmt.Printf("  ... and %d more\n", len(list)-10)
+				break
+			}
+			fmt.Printf("  %s\n", rel)
+		}
+	}
+	report("Missing at the target", res.Missing)
+	report("Contents differ", res.Mismatch)
+
+	fmt.Printf("\nWorlds\n")
+	for _, w := range res.Worlds {
+		status := "ok"
+		if !w.OK() {
+			status = "MISMATCH " + fmt.Sprint(w.Namespaces)
+			if w.Err != nil {
+				status = "unreadable: " + w.Err.Error()
+			}
+		}
+		fmt.Printf("  %-34s source=%-7d target=%-7d %s\n", w.ID, w.SourceDocs, w.TargetDocs, status)
+	}
+
+	if !res.OK() {
+		return fmt.Errorf("verification failed")
+	}
+	fmt.Println("\nEverything the plan selected is present and reads back identically.")
+	return nil
 }
