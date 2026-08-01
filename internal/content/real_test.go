@@ -2,6 +2,7 @@ package content
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -56,4 +57,14 @@ func TestRealInstallHashing(t *testing.T) {
 	t.Logf("unique blobs=%d of %d files, duplicate bytes=%.1f MiB",
 		len(unique), len(res.Entries), float64(dupBytes)/(1<<20))
 
+	onDisk := &Cache{entries: res.Entries, path: filepath.Join(t.TempDir(), "cache.json"), dirty: true}
+	if err := onDisk.Save(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(onDisk.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("cache file=%.2f MiB for %d entries (%.0f bytes/entry)",
+		float64(info.Size())/(1<<20), len(res.Entries), float64(info.Size())/float64(len(res.Entries)))
 }
