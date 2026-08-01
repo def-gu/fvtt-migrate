@@ -138,3 +138,38 @@ func countByNamespace(worldDir string) (map[string]int, error) {
 	})
 	return counts, err
 }
+
+// Remote compares what the receiving side reports about its own worlds with
+// what this machine sees, which is the same check as Worlds without needing
+// the far tree to be reachable as a directory.
+func Remote(sourceData string, reported map[string]int) ([]WorldCheck, error) {
+	entries, err := os.ReadDir(filepath.Join(sourceData, "worlds"))
+	if err != nil {
+		return nil, err
+	}
+
+	var out []WorldCheck
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		there, sent := reported[e.Name()]
+		if !sent {
+			continue
+		}
+
+		counts, err := countByNamespace(filepath.Join(sourceData, "worlds", e.Name()))
+		check := WorldCheck{ID: e.Name(), TargetDocs: there}
+		if err != nil {
+			check.Err, check.Failure = err, err.Error()
+			out = append(out, check)
+			continue
+		}
+		for _, n := range counts {
+			check.SourceDocs += n
+		}
+		out = append(out, check)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}

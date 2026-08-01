@@ -20,9 +20,15 @@ import (
 	"github.com/def-gu/fvtt-migrate/internal/verify"
 )
 
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
+	}
+	if os.Args[1] == "version" {
+		fmt.Println("fvtt-migrate", version)
+		return
 	}
 
 	cmd := os.Args[1]
@@ -82,7 +88,7 @@ func main() {
 			fs.Usage()
 			os.Exit(2)
 		}
-		err = runVerify(*root, *core, *out, *to, *deep, *asJSON)
+		err = runVerify(*root, *core, *out, *to, tokenFrom(*token), *deep, *asJSON, *insecure)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -193,7 +199,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate plan --root <user data> [--core <application dir>] [--out plan.yaml] [--check-updates]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate apply --root <user data> --to <directory> [--out plan.yaml] [--dry-run]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate verify --root <user data> --to <directory> [--deep]")
-	fmt.Fprintln(os.Stderr, "  fvtt-migrate serve --to <directory> [--listen 127.0.0.1:7788] [--token ...]")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate serve --to <directory> [--listen 127.0.0.1:7788]")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate version")
 	os.Exit(2)
 }
 
@@ -360,7 +367,64 @@ func countIncluded(ws []plan.World) int {
 	return n
 }
 
-func runVerify(root, core, planPath, to string, deep, asJSON bool) error {
+func runVerify(root, core, planPath, to, token string, deep, asJSON, insecure bool) error {
+	if isRemote(to) {
+		return verifyRemote(root, core, to, token, asJSON, insecure)
+	}
+	return verifyLocal(root, core, planPath, to, deep, asJSON)
+}
+
+func verifyRemote(root, core, to, token string, asJSON, insecure bool) error {
+	if err := api.CheckAddress(to, insecure); err != nil {
+		return err
+	}
+	inst, err := foundry.Open(root)
+	if err != nil {
+		return err
+	}
+	_ = core
+
+	reported, err := api.NewClient(to, token).Worlds(context.Background())
+	if err != nil {
+		return err
+	}
+	counts := map[string]int{}
+	for _, w := range reported {
+		counts[w.ID] = w.Documents
+	}
+
+	worlds, err := verify.Remote(inst.Data, counts)
+	if err != nil {
+		return err
+	}
+	res := &verify.Result{Missing: []string{}, Mismatch: []string{}, Worlds: worlds}
+
+	if asJSON {
+		if err := report.JSON(os.Stdout, res); err != nil {
+			return err
+		}
+		if !res.OK() {
+			return fmt.Errorf("verification failed")
+		}
+		return nil
+	}
+
+	fmt.Printf("Checked %s\n\nWorlds\n", to)
+	for _, w := range worlds {
+		status := "ok"
+		if !w.OK() {
+			status = "MISMATCH"
+		}
+		fmt.Printf("  %-34s source=%-7d target=%-7d %s\n", w.ID, w.SourceDocs, w.TargetDocs, status)
+	}
+	if !res.OK() {
+		return fmt.Errorf("verification failed")
+	}
+	fmt.Println("\nEvery world that travelled reads back with the same number of documents.")
+	return nil
+}
+
+func verifyLocal(root, core, planPath, to string, deep, asJSON bool) error {
 	inst, _, ix, sum, err := analyse(root, core)
 	if err != nil {
 		return err
@@ -492,8 +556,13 @@ func runServe(dir, listen, token string) error {
 		fmt.Printf("Panel          not served: %s is reachable from elsewhere\n", listen)
 	}
 	fmt.Printf("Token          %s\n\n", token)
-	fmt.Println("Send from the other machine with:")
-	fmt.Printf("  fvtt-migrate apply --root <user data> --to http://%s --token %s\n", listen, token)
+	fmt.Println("On the sending machine:")
+	fmt.Printf("  export FVTT_MIGRATE_TOKEN=%s\n", token)
+	if local {
+		fmt.Printf("  fvtt-migrate apply --root <user data> --to http://%s\n", listen)
+	} else {
+		fmt.Println("  fvtt-migrate apply --root <user data> --to https://<the address your proxy serves>")
+	}
 
 	return api.Listener(listen, handler).ListenAndServe()
 }

@@ -189,3 +189,11 @@ func expect(resp *http.Response, status int) error {
 	}
 	return fmt.Errorf("unexpected status %s", resp.Status)
 }
+
+func (t *Client) Worlds(ctx context.Context) ([]WorldCount, error) {
+	var resp WorldsResponse
+	if err := t.call(ctx, http.MethodGet, PathWorlds, nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Worlds, nil
+}

@@ -35,6 +35,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc(PathBlob, s.guard(s.blob))
 	mux.HandleFunc(PathPlace, s.guard(s.place))
 	mux.HandleFunc(PathCommit, s.guard(s.commit))
+	mux.HandleFunc(PathWorlds, s.guard(s.worlds))
 }
 
 // Without a token anyone who can reach the port could write files into the

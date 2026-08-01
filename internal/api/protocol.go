@@ -8,6 +8,7 @@ const (
 	PathBlob    = "/v1/blobs/"
 	PathPlace   = "/v1/tree/place"
 	PathCommit  = "/v1/commit"
+	PathWorlds  = "/v1/worlds"
 )
 
 var Capabilities = []string{"target/1", "digest/blake3-256", "transfer/whole-file"}
@@ -34,4 +35,14 @@ type PlaceRequest struct {
 type Failure struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+type WorldCount struct {
+	ID        string `json:"id"`
+	Documents int    `json:"documents"`
+	Failure   string `json:"failure,omitempty"`
+}
+
+type WorldsResponse struct {
+	Worlds []WorldCount `json:"worlds"`
 }
