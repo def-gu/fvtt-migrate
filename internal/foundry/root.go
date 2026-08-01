@@ -18,6 +18,26 @@ type Options struct {
 	DataPath string `json:"dataPath"`
 	Language string `json:"language"`
 	Port     int    `json:"port"`
+	World    string `json:"world"`
+}
+
+type Liveness struct {
+	ServerRunning bool
+	ActiveWorld   string
+}
+
+// Foundry holds Config/options.json.lock while the server process is up, and
+// names the loaded world in options.json. Only a loaded world has its database
+// open, so a running server on its own does not make a copy unsafe.
+func (i *Install) Liveness() Liveness {
+	var l Liveness
+	if info, err := os.Stat(filepath.Join(i.Config, "options.json.lock")); err == nil && info.IsDir() {
+		l.ServerRunning = true
+	}
+	if opts, err := i.Options(); err == nil {
+		l.ActiveWorld = opts.World
+	}
+	return l
 }
 
 var ErrNotFoundry = errors.New("not a Foundry user-data directory")

@@ -32,6 +32,7 @@ func main() {
 	checkUpdates := fs.Bool("check-updates", false, "read upstream manifests; without it nothing leaves this machine")
 
 	to := fs.String("to", "", "directory to migrate into")
+	force := fs.Bool("force", false, "copy even while a world is loaded")
 
 	switch cmd {
 	case "scan", "plan", "apply":
@@ -55,7 +56,7 @@ func main() {
 			fs.Usage()
 			os.Exit(2)
 		}
-		err = runApply(*root, *core, *out, *to)
+		err = runApply(*root, *core, *out, *to, *force)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -63,7 +64,7 @@ func main() {
 	}
 }
 
-func runApply(root, core, planPath, to string) error {
+func runApply(root, core, planPath, to string, force bool) error {
 	inst, _, ix, sum, err := analyse(root, core)
 	if err != nil {
 		return err
@@ -77,6 +78,13 @@ func runApply(root, core, planPath, to string) error {
 	f.Close()
 	if err != nil {
 		return err
+	}
+
+	if live := inst.Liveness(); live.ActiveWorld != "" && !force {
+		return fmt.Errorf("world %q is loaded in Foundry; copying an open database corrupts it. "+
+			"Return Foundry to setup, or pass --force to copy anyway", live.ActiveWorld)
+	} else if live.ServerRunning {
+		fmt.Fprintln(os.Stderr, "note: Foundry is running with no world loaded, which is safe to copy")
 	}
 
 	sel, err := transfer.Select(p, inst.Data, ix, sum)
@@ -102,6 +110,13 @@ func runApply(root, core, planPath, to string) error {
 		transfer.NewFileTarget(to), transfer.Options{})
 	if err != nil {
 		return err
+	}
+
+	if moved := content.Recheck(inst.Data, hashed.Entries); len(moved) > 0 {
+		for _, rel := range moved[:min(len(moved), 10)] {
+			fmt.Fprintf(os.Stderr, "  changed while copying: %s\n", rel)
+		}
+		return fmt.Errorf("%d source files changed during the copy; the result is not a snapshot of any single moment", len(moved))
 	}
 
 	fmt.Printf("\nUnique blobs   %d\n", prog.Negotiated)
