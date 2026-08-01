@@ -36,6 +36,7 @@ func main() {
 	to := fs.String("to", "", "directory to migrate into")
 	force := fs.Bool("force", false, "copy even while a world is loaded")
 	asJSON := fs.Bool("json", false, "emit machine-readable output instead of text")
+	dryRun := fs.Bool("dry-run", false, "work out what would be transferred without writing anything")
 	deep := fs.Bool("deep", false, "re-hash every transferred file at the target")
 
 	switch cmd {
@@ -60,7 +61,7 @@ func main() {
 			fs.Usage()
 			os.Exit(2)
 		}
-		err = runApply(*root, *core, *out, *to, *force, *asJSON)
+		err = runApply(*root, *core, *out, *to, *force, *asJSON, *dryRun)
 	case "verify":
 		if *to == "" {
 			fs.Usage()
@@ -74,7 +75,7 @@ func main() {
 	}
 }
 
-func runApply(root, core, planPath, to string, force, asJSON bool) error {
+func runApply(root, core, planPath, to string, force, asJSON, dryRun bool) error {
 	inst, _, ix, sum, err := analyse(root, core)
 	if err != nil {
 		return err
@@ -88,6 +89,14 @@ func runApply(root, core, planPath, to string, force, asJSON bool) error {
 	f.Close()
 	if err != nil {
 		return err
+	}
+
+	findings := p.Validate()
+	for _, f := range findings {
+		fmt.Fprintf(os.Stderr, "  %s [%s] %s: %s\n", f.Severity, f.Code, f.Where, f.Message)
+	}
+	if plan.HasErrors(findings) {
+		return fmt.Errorf("the plan has errors; fix them and run again")
 	}
 
 	sink := progressSink(asJSON)
@@ -123,7 +132,7 @@ func runApply(root, core, planPath, to string, force, asJSON bool) error {
 	}
 
 	prog, err := transfer.Apply(context.Background(), inst.Data, sel, hashed.Entries,
-		transfer.NewFileTarget(to), transfer.Options{Sink: sink})
+		transfer.NewFileTarget(to), transfer.Options{Sink: sink, DryRun: dryRun})
 	if err != nil {
 		return err
 	}
@@ -139,6 +148,13 @@ func runApply(root, core, planPath, to string, force, asJSON bool) error {
 		return report.JSON(os.Stdout, prog)
 	}
 
+	if dryRun {
+		fmt.Printf("\nWould transfer %d blobs, %s\n", prog.WouldSend, report.Bytes(prog.WouldSendByte))
+		fmt.Printf("Already there  %d blobs, %s\n", prog.Skipped, report.Bytes(prog.SkippedByte))
+		fmt.Println("\nNothing was written. Drop --dry-run to do it.")
+		return nil
+	}
+
 	fmt.Printf("\nUnique blobs   %d\n", prog.Negotiated)
 	fmt.Printf("Transferred    %d blobs, %s\n", prog.Uploaded, report.Bytes(prog.UploadedByte))
 	fmt.Printf("Already there  %d blobs, %s not sent\n", prog.Skipped, report.Bytes(prog.SkippedByte))
@@ -151,7 +167,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate scan --root <user data> [--core <application dir>]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate plan --root <user data> [--core <application dir>] [--out plan.yaml] [--check-updates]")
-	fmt.Fprintln(os.Stderr, "  fvtt-migrate apply --root <user data> --to <directory> [--out plan.yaml]")
+	fmt.Fprintln(os.Stderr, "  fvtt-migrate apply --root <user data> --to <directory> [--out plan.yaml] [--dry-run]")
 	fmt.Fprintln(os.Stderr, "  fvtt-migrate verify --root <user data> --to <directory> [--deep]")
 	os.Exit(2)
 }
@@ -406,8 +422,12 @@ func runVerify(root, core, planPath, to string, deep, asJSON bool) error {
 // Machine-readable runs stream events as JSON lines on stderr, leaving stdout
 // for the single result document. Terminal runs get one rewriting line.
 func progressSink(asJSON bool) progress.Sink {
-	if asJSON {
+	switch {
+	case asJSON:
 		return progress.Lines(os.Stderr)
+	case progress.IsTerminal(os.Stderr):
+		return progress.Ticker(os.Stderr)
+	default:
+		return progress.Plain(os.Stderr)
 	}
-	return progress.Ticker(os.Stderr)
 }

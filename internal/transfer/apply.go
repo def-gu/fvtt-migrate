@@ -19,11 +19,15 @@ type Progress struct {
 	Placed       int   `json:"placed_files"`
 	Skipped      int   `json:"already_present_blobs"`
 	SkippedByte  int64 `json:"already_present_bytes"`
+
+	WouldSend     int   `json:"would_send_blobs,omitempty"`
+	WouldSendByte int64 `json:"would_send_bytes,omitempty"`
 }
 
 type Options struct {
 	Workers int
 	Sink    progress.Sink
+	DryRun  bool
 }
 
 func Apply(ctx context.Context, sourceRoot string, sel Selection, digests map[string]content.Entry, tgt Target, opts Options) (*Progress, error) {
@@ -61,6 +65,14 @@ func Apply(ctx context.Context, sourceRoot string, sel Selection, digests map[st
 		if !needed[d] {
 			prog.SkippedByte += byDigest[d].Size
 		}
+	}
+
+	if opts.DryRun {
+		for _, d := range missing {
+			prog.WouldSendByte += byDigest[d].Size
+		}
+		prog.WouldSend = len(missing)
+		return prog, nil
 	}
 
 	if err := uploadAll(ctx, sourceRoot, missing, byDigest, tgt, opts, prog); err != nil {

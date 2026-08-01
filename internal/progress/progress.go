@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 )
@@ -121,13 +122,24 @@ func Lines(w io.Writer) Sink {
 
 func Ticker(w io.Writer) Sink {
 	var mu sync.Mutex
+	var pending bool
+
+	// The clear-line escape is only correct once a progress line is on screen;
+	// emitting it otherwise leaks into whatever else is being printed.
+	clear := func() string {
+		if pending {
+			pending = false
+			return "\r\033[K"
+		}
+		return ""
+	}
 
 	return Throttle(sinkFunc(func(v any) {
 		mu.Lock()
 		defer mu.Unlock()
 
 		if n, ok := v.(Notice); ok {
-			fmt.Fprintf(w, "\r\033[K%s: %s\n", n.Level, n.Message)
+			fmt.Fprintf(w, "%s%s: %s\n", clear(), n.Level, n.Message)
 			return
 		}
 
@@ -142,9 +154,11 @@ func Ticker(w io.Writer) Sink {
 		if e.Bytes > 0 {
 			line += "  " + Bytes(e.Bytes)
 		}
-		fmt.Fprintf(w, "\r\033[K%s", line)
+		fmt.Fprintf(w, "%s\r%s", clear(), line)
+		pending = true
 		if e.Total > 0 && e.Done >= e.Total {
 			fmt.Fprintln(w)
+			pending = false
 		}
 	}), 100*time.Millisecond)
 }
@@ -160,4 +174,28 @@ func Bytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
+// Plain writes one line per event with no escape sequences, for output that is
+// not a terminal.
+func Plain(w io.Writer) Sink {
+	var mu sync.Mutex
+	return Throttle(sinkFunc(func(v any) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		switch e := v.(type) {
+		case Notice:
+			fmt.Fprintf(w, "%s: %s\n", e.Level, e.Message)
+		case Event:
+			if e.Total > 0 && e.Done >= e.Total {
+				fmt.Fprintf(w, "%s %d/%d\n", e.Phase, e.Done, e.Total)
+			}
+		}
+	}), time.Second)
+}
+
+func IsTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
