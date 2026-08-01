@@ -4,6 +4,7 @@ import (
 	"io"
 	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
 	"github.com/def-gu/fvtt-migrate/internal/scan"
@@ -13,12 +14,67 @@ import (
 
 const formatVersion = 1
 
+// Capabilities name the features a document uses, so that additive changes need
+// no version bump and a reader can refuse precisely what it does not know.
+var writtenCapabilities = []string{
+	"plan/1",
+	"digest/blake3-256",
+	"transfer/whole-file",
+}
+
+type Format struct {
+	Version      int      `yaml:"version"`
+	Capabilities []string `yaml:"capabilities"`
+}
+
+type Identity struct {
+	Tenant       string `yaml:"tenant,omitempty"`
+	Device       string `yaml:"device,omitempty"`
+	Installation string `yaml:"installation,omitempty"`
+}
+
+// Baton records which installation last held a world and the state both sides
+// agreed on, so a later handoff can tell divergence from a fresh copy.
+type Baton struct {
+	Holder     string `yaml:"holder"`
+	Generation int    `yaml:"generation"`
+	BaseDigest string `yaml:"base_digest,omitempty"`
+}
+
 type Plan struct {
-	FormatVersion int       `yaml:"format_version"`
-	Source        Endpoint  `yaml:"source"`
-	Worlds        []World   `yaml:"worlds"`
-	Packages      []Package `yaml:"packages"`
-	Assets        Assets    `yaml:"assets"`
+	Format   Format    `yaml:"format"`
+	Identity Identity  `yaml:"identity"`
+	Source   Endpoint  `yaml:"source"`
+	Worlds   []World   `yaml:"worlds"`
+	Packages []Package `yaml:"packages"`
+	Assets   Assets    `yaml:"assets"`
+}
+
+type UnsupportedError struct {
+	Unknown []string
+}
+
+func (e *UnsupportedError) Error() string {
+	return "this plan needs features this version does not have: " +
+		strings.Join(e.Unknown, ", ") + ". Update fvtt-migrate and try again."
+}
+
+func (f Format) Check() error {
+	known := map[string]bool{}
+	for _, c := range writtenCapabilities {
+		known[c] = true
+	}
+
+	var unknown []string
+	for _, c := range f.Capabilities {
+		if !known[c] {
+			unknown = append(unknown, c)
+		}
+	}
+	if len(unknown) > 0 {
+		return &UnsupportedError{Unknown: unknown}
+	}
+	return nil
 }
 
 type Endpoint struct {
@@ -36,6 +92,7 @@ type World struct {
 	SystemInstalled bool   `yaml:"system_installed"`
 	Include         bool   `yaml:"include"`
 	Blocker         string `yaml:"blocker,omitempty"`
+	Baton           *Baton `yaml:"baton,omitempty"`
 }
 
 type Assets struct {
@@ -74,7 +131,8 @@ func Build(inst *foundry.Install, inv *foundry.Inventory, sum *scan.Summary, opt
 	}
 
 	p := &Plan{
-		FormatVersion: formatVersion,
+		Format:   Format{Version: formatVersion, Capabilities: writtenCapabilities},
+		Identity: opts.Identity,
 		Source: Endpoint{
 			Root:        inst.Root,
 			OS:          runtime.GOOS,
@@ -153,6 +211,9 @@ func (p *Plan) Write(w io.Writer) error {
 func Read(r io.Reader) (*Plan, error) {
 	var p Plan
 	if err := yaml.NewDecoder(r).Decode(&p); err != nil {
+		return nil, err
+	}
+	if err := p.Format.Check(); err != nil {
 		return nil, err
 	}
 	return &p, nil

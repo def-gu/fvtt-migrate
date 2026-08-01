@@ -58,6 +58,7 @@ type Cache interface {
 }
 
 type Options struct {
+	Identity     Identity
 	TargetCore   string
 	ObservedCore string
 	Cache        Cache

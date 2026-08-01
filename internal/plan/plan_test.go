@@ -2,6 +2,8 @@ package plan
 
 import (
 	"bytes"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
@@ -84,13 +86,42 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if back.FormatVersion != p.FormatVersion || len(back.Worlds) != len(p.Worlds) {
+	if back.Format.Version != p.Format.Version || len(back.Worlds) != len(p.Worlds) {
 		t.Fatalf("round trip lost data: %+v", back)
+	}
+	if len(back.Format.Capabilities) != len(writtenCapabilities) {
+		t.Errorf("capabilities lost: %v", back.Format.Capabilities)
 	}
 	if back.Source.PackageMode != PolicyPin {
 		t.Errorf("package policy = %q, want pin", back.Source.PackageMode)
 	}
 	if back.Assets.Referenced.Bytes != 1000 {
 		t.Errorf("asset totals not preserved: %+v", back.Assets)
+	}
+}
+
+func TestReadRefusesUnknownCapabilities(t *testing.T) {
+	body := "format:\n  version: 1\n  capabilities: [plan/1, transfer/chunked]\n"
+
+	_, err := Read(bytes.NewReader([]byte(body)))
+	var unsupported *UnsupportedError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("got %v, want UnsupportedError", err)
+	}
+	if len(unsupported.Unknown) != 1 || unsupported.Unknown[0] != "transfer/chunked" {
+		t.Errorf("unknown = %v, want [transfer/chunked]", unsupported.Unknown)
+	}
+	if !strings.Contains(err.Error(), "Update fvtt-migrate") {
+		t.Errorf("message gives the owner nothing to do: %q", err)
+	}
+}
+
+func TestIdentityFlowsIntoThePlan(t *testing.T) {
+	inst, inv, sum := testInputs()
+	id := Identity{Tenant: "t1", Device: "d1", Installation: "i1"}
+
+	got := Build(inst, inv, sum, Options{Identity: id}).Identity
+	if got != id {
+		t.Errorf("identity = %+v, want %+v", got, id)
 	}
 }
