@@ -165,7 +165,18 @@ func readPackage(kind Kind, dir string) (*Package, error) {
 	if err != nil {
 		return nil, err
 	}
+	p, err := ParseManifest(kind, raw)
+	if err != nil {
+		return nil, err
+	}
+	p.Dir = dir
+	if p.ID == "" {
+		p.ID = filepath.Base(dir)
+	}
+	return p, nil
+}
 
+func ParseManifest(kind Kind, raw []byte) (*Package, error) {
 	var m rawManifest
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", manifestFile[kind], err)
@@ -174,9 +185,6 @@ func readPackage(kind Kind, dir string) (*Package, error) {
 	id := m.ID
 	if id == "" {
 		id = m.Name
-	}
-	if id == "" {
-		id = filepath.Base(dir)
 	}
 
 	manifest := ""
@@ -189,7 +197,6 @@ func readPackage(kind Kind, dir string) (*Package, error) {
 		ID:               id,
 		Title:            m.Title,
 		Version:          string(m.Version),
-		Dir:              dir,
 		Manifest:         manifest,
 		DeclaresManifest: m.Manifest != nil,
 		Download:         m.Download,
