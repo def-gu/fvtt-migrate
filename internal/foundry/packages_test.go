@@ -71,3 +71,43 @@ func TestInventory(t *testing.T) {
 		t.Errorf("problems = %d, want 1 (the malformed manifest)", len(inv.Problems))
 	}
 }
+
+func TestDelivery(t *testing.T) {
+	root := newInstall(t)
+
+	writePackage(t, root, "modules", "lib-wrapper", "module.json", `{
+		"id":"lib-wrapper","version":"1.13.5.1",
+		"manifest":"https://github.com/ruipin/fvtt-lib-wrapper/releases/latest/download/module.json",
+		"download":"https://github.com/ruipin/fvtt-lib-wrapper/releases/download/v1.13.5.1/module.zip",
+		"authors":[{"name":"ruipin"}]}`)
+	writePackage(t, root, "modules", "quick-doors", "module.json", `{
+		"id":"quick-doors","version":"2.1.0","download":"",
+		"manifest":"https://r2.foundryvtt.com/packages-public/quick-doors/module.json",
+		"authors":[{"name":"theripper93"}]}`)
+	writePackage(t, root, "modules", "pf2e-ap197", "module.json", `{
+		"id":"pf2e-ap197","version":"1.0.0","manifest":"","download":"",
+		"authors":[{"name":"Paizo"}]}`)
+
+	inst, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := inst.Inventory()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]Delivery{
+		"lib-wrapper": DeliveryOpen,
+		"quick-doors": DeliveryStore,
+		"pf2e-ap197":  DeliveryCarry,
+	}
+	for _, m := range inv.Modules {
+		if got := m.Delivery; got != want[m.ID] {
+			t.Errorf("%s delivery = %q, want %q", m.ID, got, want[m.ID])
+		}
+		if len(m.Authors) != 1 {
+			t.Errorf("%s authors = %v, want one name", m.ID, m.Authors)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package foundry
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,22 @@ type Compatibility struct {
 	Maximum  string `json:"maximum,omitempty"`
 }
 
+// Delivery is read from the download field rather than from `protected`, which
+// Foundry rewrites to false on install.
+type Delivery string
+
+const (
+	DeliveryOpen  Delivery = "open"
+	DeliveryStore Delivery = "store"
+	DeliveryCarry Delivery = "carry"
+)
+
+var storeHosts = map[string]bool{
+	"r2.foundryvtt.com": true,
+	"foundryvtt.com":    true,
+	"cdn.paizo.com":     true,
+}
+
 type Package struct {
 	Kind     Kind
 	ID       string
@@ -30,6 +47,8 @@ type Package struct {
 	Dir      string
 	Manifest string
 	Download string
+	Authors  []string
+	Delivery Delivery
 	Compat   Compatibility
 
 	// DeclaresManifest distinguishes a manifest field left deliberately empty,
@@ -90,6 +109,10 @@ type rawManifest struct {
 	Version  laxString `json:"version"`
 	Manifest *string   `json:"manifest"`
 	Download string    `json:"download"`
+	Author   string    `json:"author"`
+	Authors  []struct {
+		Name string `json:"name"`
+	} `json:"authors"`
 
 	Compatibility         *rawCompat `json:"compatibility"`
 	MinimumCoreVersion    laxString  `json:"minimumCoreVersion"`
@@ -192,6 +215,8 @@ func ParseManifest(kind Kind, raw []byte) (*Package, error) {
 		manifest = strings.TrimSpace(*m.Manifest)
 	}
 
+	download := strings.TrimSpace(m.Download)
+
 	return &Package{
 		Kind:             kind,
 		ID:               id,
@@ -199,13 +224,38 @@ func ParseManifest(kind Kind, raw []byte) (*Package, error) {
 		Version:          string(m.Version),
 		Manifest:         manifest,
 		DeclaresManifest: m.Manifest != nil,
-		Download:         m.Download,
+		Download:         download,
+		Authors:          m.authors(),
+		Delivery:         delivery(manifest, download),
 		Compat:           m.compat(),
 		System:           m.System,
 		SystemVersion:    string(m.SystemVersion),
 		CoreVersion:      string(m.CoreVersion),
 		Background:       m.Background,
 	}, nil
+}
+
+func (m *rawManifest) authors() []string {
+	var out []string
+	for _, a := range m.Authors {
+		if name := strings.TrimSpace(a.Name); name != "" {
+			out = append(out, name)
+		}
+	}
+	if len(out) == 0 && strings.TrimSpace(m.Author) != "" {
+		out = append(out, strings.TrimSpace(m.Author))
+	}
+	return out
+}
+
+func delivery(manifest, download string) Delivery {
+	if download != "" {
+		return DeliveryOpen
+	}
+	if u, err := url.Parse(manifest); err == nil && storeHosts[u.Hostname()] {
+		return DeliveryStore
+	}
+	return DeliveryCarry
 }
 
 // Manifests written before Foundry v10 carry the bounds as two flat fields.

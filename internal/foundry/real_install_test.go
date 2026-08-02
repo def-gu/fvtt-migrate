@@ -43,6 +43,18 @@ func TestRealInstall(t *testing.T) {
 		}
 	}
 	t.Logf("modules without manifest=%d without version=%d", noManifest, noVersion)
+
+	byDelivery := map[Delivery]int{}
+	byAuthor := map[string]int{}
+	for _, m := range inv.Modules {
+		byDelivery[m.Delivery]++
+		for _, a := range m.Authors {
+			byAuthor[a]++
+		}
+	}
+	t.Logf("delivery open=%d store=%d carry=%d",
+		byDelivery[DeliveryOpen], byDelivery[DeliveryStore], byDelivery[DeliveryCarry])
+	t.Logf("distinct authors=%d", len(byAuthor))
 }
 
 func TestRealInstallDocuments(t *testing.T) {
