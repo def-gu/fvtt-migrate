@@ -108,3 +108,71 @@ export type Installation = {
   bytes: number;
   status: InstallStatus;
 };
+
+export type Delivery = "open" | "store" | "carry";
+
+export type Size = { files: number; bytes: number };
+
+export type InventoryWorld = {
+  id: string;
+  title: string;
+  description: string;
+  path: string;
+  system: string;
+  system_title: string;
+  system_version: string;
+  system_installed: boolean;
+  core_version: string;
+  last_played: string;
+  size: Size;
+  active_modules: string[];
+  missing_modules: string[];
+};
+
+export type InventoryPackage = {
+  id: string;
+  title: string;
+  version: string;
+  path: string;
+  authors: string[];
+  delivery: Delivery;
+  manifest: string;
+  verified_core: string;
+  minimum_core: string;
+  maximum_core: string;
+  size: Size;
+  target_systems: string[];
+  requires: string[];
+  missing_requirements: string[];
+  used_by_worlds: string[];
+  module_count?: number;
+};
+
+export type Inventory = {
+  root: string;
+  worlds: InventoryWorld[];
+  systems: InventoryPackage[];
+  modules: InventoryPackage[];
+};
+
+export type ScanPhase = "packages" | "indexing" | "worlds" | "classifying";
+
+export type ScanEvent =
+  | { type: "progress"; phase: ScanPhase; done: number; total: number; bytes?: number; detail?: string }
+  | { type: "notice"; level: "note" | "warning"; code: string; message: string }
+  | { type: "result"; result: Inventory }
+  | { type: "failed"; message: string };
+
+export type Found = { root: string; worlds: number; systems: number; modules: number };
+
+export type Entry = { name: string; path: string; foundry: boolean };
+
+export type Listing = { path: string; parent: string; roots: string[]; entries: Entry[] };
+
+export type Chosen = {
+  root: string;
+  scanned: boolean;
+  scanned_at?: string;
+  foundry_running: boolean;
+  active_world?: string;
+};

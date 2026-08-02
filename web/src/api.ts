@@ -1,4 +1,7 @@
-import type { Plan, StreamEvent, ApplyResult, VerifyResult } from "./contract";
+import type {
+  Plan, StreamEvent, ApplyResult, VerifyResult,
+  Inventory, ScanEvent, Found, Listing, Chosen,
+} from "./contract";
 
 export type State = {
   root: string;
@@ -61,16 +64,54 @@ export function verify(dest: Destination): Promise<VerifyResult> {
   return post("/api/verify", { to: dest.to, token: dest.token });
 }
 
-export async function run(
+export function detect(): Promise<Found[]> {
+  return get("/api/detect");
+}
+
+export function browse(path: string): Promise<Listing> {
+  return get("/api/browse?path=" + encodeURIComponent(path));
+}
+
+export function open(root: string): Promise<Chosen> {
+  return post("/api/open", { root });
+}
+
+export function inventory(): Promise<Inventory> {
+  return get("/api/inventory");
+}
+
+export function scan(onEvent: (e: ScanEvent) => void, signal?: AbortSignal): Promise<void> {
+  return stream("/api/scan", {}, onEvent, signal);
+}
+
+export function run(
   plan: Plan,
   dest: Destination,
   onEvent: (e: RunEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch("/api/run", {
+  const body = { to: dest.to, token: dest.token, dry_run: dest.dryRun, plan };
+  return stream("/api/run", body, onEvent, signal);
+}
+
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(await message(res));
+  return res.json() as Promise<T>;
+}
+
+// One line of JSON per event. Reading them as they arrive is what lets a long
+// operation show where it is instead of looking stalled.
+async function stream<E>(
+  path: string,
+  body: unknown,
+  onEvent: (e: E) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to: dest.to, token: dest.token, dry_run: dest.dryRun, plan }),
+    body: JSON.stringify(body),
     signal,
   });
   if (!res.ok) throw new Error(await message(res));

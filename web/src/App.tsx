@@ -1,63 +1,102 @@
-import { useEffect, useState } from "react";
-import type { Plan, VerifyResult } from "./contract";
+import { useCallback, useEffect, useState } from "react";
+import type { Inventory, Plan, VerifyResult } from "./contract";
 import * as api from "./api";
+import { WelcomeScreen } from "./screens/Welcome";
+import { ScanningScreen } from "./screens/Scanning";
 import { PlanScreen } from "./screens/Plan";
 import { TransferScreen } from "./screens/Transfer";
 import { VerifyScreen } from "./screens/Verify";
 
-type Stage = "loading" | "plan" | "transfer" | "verify";
+type Stage = "welcome" | "scanning" | "plan" | "transfer" | "verify";
 
 export function App() {
-  const [stage, setStage] = useState<Stage>("loading");
+  const [stage, setStage] = useState<Stage>("welcome");
+  const [root, setRoot] = useState("");
+  const [inventory, setInventory] = useState<Inventory | null>(null);
   const [state, setState] = useState<api.State | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [dest, setDest] = useState<api.Destination>({ to: "", token: "", dryRun: false });
   const [result, setResult] = useState<VerifyResult | null>(null);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    api
-      .loadState()
-      .then(async (s) => {
-        setState(s);
-        setPlan(await api.buildPlan(s.targets?.[0] ?? "", false));
-        setStage("plan");
-      })
-      .catch((e) => setError(String(e.message ?? e)));
+  const scanned = useCallback(async (inv: Inventory) => {
+    setInventory(inv);
+    setRoot(inv.root);
+    try {
+      const s = await api.loadState();
+      setState(s);
+      setPlan(await api.buildPlan(s.targets?.[0] ?? "", false));
+      setStage("plan");
+    } catch (e) {
+      setError(String((e as Error).message));
+    }
   }, []);
+
+  // A panel started with an installation already read skips the picker.
+  useEffect(() => {
+    if (stage !== "welcome") return;
+    fetch("/api/inventory")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((inv: Inventory | null) => {
+        if (inv) scanned(inv);
+      })
+      .catch(() => undefined);
+  }, [stage, scanned]);
 
   if (error) {
     return (
       <div className="screen">
-        <div className="kicker">Установка</div>
+        <div className="kicker">{root}</div>
         <h1>Не удалось прочитать установку</h1>
-        <p className="lead">{error}</p>
-        <p className="lead">
-          Запустите программу с указанием пути, если данные Foundry лежат не там, где она
-          искала. Нужна папка, внутри которой есть `Data` и `Config`.
-        </p>
+        <p className="error">{error}</p>
+        <button
+          className="button"
+          onClick={() => {
+            setError("");
+            setStage("welcome");
+          }}
+        >
+          Выбрать другую папку
+        </button>
       </div>
     );
   }
 
-  if (state && state.scan.counts.worlds === 0) {
+  if (stage === "welcome") {
     return (
-      <div className="screen">
-        <div className="kicker">{state.root}</div>
-        <h1>В этой установке нет миров</h1>
-        <p className="lead">
-          Программа прочитала {state.root} и не нашла там ни одного мира. Так выглядит
-          пустая или служебная папка. Настоящие данные Foundry могут лежать на другом
-          диске, и тогда путь надо указать прямо.
-        </p>
-      </div>
+      <WelcomeScreen
+        onOpen={(chosen) => {
+          setRoot(chosen);
+          setStage("scanning");
+        }}
+      />
     );
   }
 
-  if (stage === "loading" || !state || !plan) {
+  if (stage === "scanning") {
+    return <ScanningScreen root={root} onDone={scanned} />;
+  }
+
+  if (!state || !plan || !inventory) {
     return (
       <div className="screen">
         <p className="lead">Чтение установки</p>
+      </div>
+    );
+  }
+
+  if (inventory.worlds.length === 0) {
+    return (
+      <div className="screen">
+        <div className="kicker">{inventory.root}</div>
+        <h1>В этой установке нет миров</h1>
+        <p className="lead">
+          Программа прочитала {inventory.root} и не нашла там ни одного мира. Настоящие
+          данные Foundry могут лежать на другом диске.
+        </p>
+        <button className="button" onClick={() => setStage("welcome")}>
+          Выбрать другую папку
+        </button>
       </div>
     );
   }
@@ -66,7 +105,10 @@ export function App() {
     <div className="app">
       <nav className="nav">
         <span className="nav-brand">Перенос установки Foundry</span>
-        <span className="nav-root">{state.root}</span>
+        <span className="nav-root">{inventory.root}</span>
+        <button className="button button-quiet" onClick={() => setStage("welcome")}>
+          Другая установка
+        </button>
       </nav>
 
       <main>

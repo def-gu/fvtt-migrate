@@ -468,3 +468,47 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+.browser {
+  margin-top: var(--space-4);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.browser-path {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-divider);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+.browser-list {
+  display: grid;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.browser-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--color-divider);
+  color: var(--color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.browser-item:hover {
+  background: var(--color-surface);
+}
+
+.browser-item-found {
+  color: var(--color-accent);
+}
