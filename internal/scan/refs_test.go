@@ -103,3 +103,14 @@ func TestWhereRecordsJSONPath(t *testing.T) {
 		t.Errorf("sounds.0.path: got %q", where["c.ogg"])
 	}
 }
+
+func TestRefsInsideEmbeddedJSON(t *testing.T) {
+	doc := `{"key":"levels-3d-preview.settings",
+		"value":"{\"particle\":\"modules/levels-3d-preview/assets/particles/dust.png\"}"}`
+
+	got := collect(t, doc)
+	want := []string{"modules/levels-3d-preview/assets/particles/dust.png"}
+	if !equal(got, want) {
+		t.Errorf("refs = %v, want %v", got, want)
+	}
+}
