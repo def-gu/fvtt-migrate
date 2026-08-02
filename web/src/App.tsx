@@ -20,7 +20,7 @@ export function App() {
       .loadState()
       .then(async (s) => {
         setState(s);
-        setPlan(await api.buildPlan(s.targets[0] ?? "", false));
+        setPlan(await api.buildPlan(s.targets?.[0] ?? "", false));
         setStage("plan");
       })
       .catch((e) => setError(String(e.message ?? e)));
@@ -29,8 +29,27 @@ export function App() {
   if (error) {
     return (
       <div className="screen">
+        <div className="kicker">Установка</div>
         <h1>Не удалось прочитать установку</h1>
         <p className="lead">{error}</p>
+        <p className="lead">
+          Запустите программу с указанием пути, если данные Foundry лежат не там, где она
+          искала. Нужна папка, внутри которой есть `Data` и `Config`.
+        </p>
+      </div>
+    );
+  }
+
+  if (state && state.scan.counts.worlds === 0) {
+    return (
+      <div className="screen">
+        <div className="kicker">{state.root}</div>
+        <h1>В этой установке нет миров</h1>
+        <p className="lead">
+          Программа прочитала {state.root} и не нашла там ни одного мира. Так выглядит
+          пустая или служебная папка. Настоящие данные Foundry могут лежать на другом
+          диске, и тогда путь надо указать прямо.
+        </p>
       </div>
     );
   }

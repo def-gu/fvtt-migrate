@@ -42,8 +42,36 @@ func (i *Install) Liveness() Liveness {
 
 var ErrNotFoundry = errors.New("not a Foundry user-data directory")
 
-// Open accepts either the user-data root or the Data directory inside it.
+// Open accepts either the user-data root or the Data directory inside it, and
+// follows the dataPath recorded in options.json. A Foundry installed on one
+// drive commonly keeps its data on another, leaving a stub behind.
 func Open(path string) (*Install, error) {
+	inst, err := open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := map[string]bool{inst.Root: true}
+	for hop := 0; hop < 4; hop++ {
+		opts, err := inst.Options()
+		if err != nil || opts.DataPath == "" {
+			return inst, nil
+		}
+		next, err := filepath.Abs(opts.DataPath)
+		if err != nil || next == inst.Root || seen[next] {
+			return inst, nil
+		}
+		elsewhere, err := open(next)
+		if err != nil {
+			return inst, nil
+		}
+		seen[next] = true
+		inst = elsewhere
+	}
+	return inst, nil
+}
+
+func open(path string) (*Install, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err

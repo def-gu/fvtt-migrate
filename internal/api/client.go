@@ -50,7 +50,10 @@ func CheckAddress(base string, allowInsecure bool) error {
 func (t *Client) Hello(ctx context.Context) (*Hello, error) {
 	var h Hello
 	if err := t.call(ctx, http.MethodGet, PathHello, nil, &h); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s does not answer as a receiving side. Check the address, including any path such as /migrate, and that the other machine is running fvtt-migrate serve. The answer was: %w", t.Base, err)
+	}
+	if h.Agent != "fvtt-migrate" {
+		return nil, fmt.Errorf("%s is answering, but it is not a receiving side", t.Base)
 	}
 
 	known := map[string]bool{}

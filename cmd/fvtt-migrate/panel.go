@@ -61,7 +61,7 @@ func panelState(root, core string) (*api.State, error) {
 	}
 
 	seen := map[string]bool{}
-	var targets []string
+	targets := []string{}
 	for _, w := range inv.Worlds {
 		if w.CoreVersion != "" && !seen[w.CoreVersion] {
 			seen[w.CoreVersion] = true
@@ -100,6 +100,11 @@ func panelRun(ctx context.Context, root, core string, req api.RunRequest, sink p
 		}
 		if req.Token == "" {
 			return nil, fmt.Errorf("the receiving side needs its access key")
+		}
+		greet, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if _, err := api.NewClient(req.To, req.Token).Hello(greet); err != nil {
+			return nil, err
 		}
 	}
 

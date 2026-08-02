@@ -142,6 +142,11 @@ func runApply(root, core, planPath, to, token string, force, asJSON, dryRun, ins
 		if token == "" {
 			return fmt.Errorf("a token is required for a remote target; set FVTT_MIGRATE_TOKEN")
 		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := api.NewClient(to, token).Hello(ctx); err != nil {
+			return err
+		}
 	}
 
 	findings := p.Validate()
