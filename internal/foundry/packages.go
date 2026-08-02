@@ -51,6 +51,10 @@ type Package struct {
 	Delivery Delivery
 	Compat   Compatibility
 
+	TargetSystems []string
+	Requires      []string
+	Recommends    []string
+
 	// DeclaresManifest distinguishes a manifest field left deliberately empty,
 	// which is how Foundry marks premium content delivered through the user's
 	// account, from one that was never written, which means local development.
@@ -126,6 +130,26 @@ type rawManifest struct {
 	Background    string    `json:"background"`
 	Description   string    `json:"description"`
 	LastPlayed    string    `json:"lastPlayed"`
+
+	Relationships *struct {
+		Systems    []related `json:"systems"`
+		Requires   []related `json:"requires"`
+		Recommends []related `json:"recommends"`
+	} `json:"relationships"`
+}
+
+type related struct {
+	ID string `json:"id"`
+}
+
+func ids(list []related) []string {
+	var out []string
+	for _, r := range list {
+		if r.ID != "" {
+			out = append(out, r.ID)
+		}
+	}
+	return out
 }
 
 var manifestFile = map[Kind]string{
@@ -221,6 +245,11 @@ func ParseManifest(kind Kind, raw []byte) (*Package, error) {
 
 	download := strings.TrimSpace(m.Download)
 
+	var targetSystems, requires, recommends []string
+	if r := m.Relationships; r != nil {
+		targetSystems, requires, recommends = ids(r.Systems), ids(r.Requires), ids(r.Recommends)
+	}
+
 	return &Package{
 		Kind:             kind,
 		ID:               id,
@@ -232,6 +261,9 @@ func ParseManifest(kind Kind, raw []byte) (*Package, error) {
 		Authors:          m.authors(),
 		Delivery:         delivery(manifest, download),
 		Compat:           m.compat(),
+		TargetSystems:    targetSystems,
+		Requires:         requires,
+		Recommends:       recommends,
 		System:           m.System,
 		SystemVersion:    string(m.SystemVersion),
 		CoreVersion:      string(m.CoreVersion),

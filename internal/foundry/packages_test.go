@@ -3,6 +3,7 @@ package foundry
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -109,5 +110,35 @@ func TestDelivery(t *testing.T) {
 		if len(m.Authors) != 1 {
 			t.Errorf("%s authors = %v, want one name", m.ID, m.Authors)
 		}
+	}
+}
+
+func TestRelationships(t *testing.T) {
+	root := newInstall(t)
+	writePackage(t, root, "modules", "pf2e-dorako-ui", "module.json", `{
+		"id":"pf2e-dorako-ui","version":"3.9.0",
+		"relationships":{
+			"systems":[{"id":"pf2e"},{"id":"sf2e"}],
+			"requires":[{"id":"lib-wrapper"}],
+			"recommends":[{"id":"babele"}]}}`)
+
+	inst, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := inst.Inventory()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := inv.Modules[0]
+	if got := strings.Join(m.TargetSystems, ","); got != "pf2e,sf2e" {
+		t.Errorf("target systems = %q", got)
+	}
+	if got := strings.Join(m.Requires, ","); got != "lib-wrapper" {
+		t.Errorf("requires = %q", got)
+	}
+	if got := strings.Join(m.Recommends, ","); got != "babele" {
+		t.Errorf("recommends = %q", got)
 	}
 }
