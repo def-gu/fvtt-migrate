@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/def-gu/fvtt-migrate/internal/progress"
 )
 
 type Location int
@@ -36,19 +38,33 @@ var corePrefixes = map[string]bool{
 // version-control metadata belongs to modules under development.
 var skipDirs = map[string]bool{".git": true, "node_modules": true}
 
-func Build(dataDir, coreDir string) (*Index, error) {
+func Build(dataDir, coreDir string, sink progress.Sink) (*Index, error) {
 	ix := &Index{
 		data:  make(map[string]int64),
 		lower: make(map[string]string),
 		core:  make(map[string]bool),
 	}
 
+	var bytes int64
 	if err := walkFiles(dataDir, func(rel string, size int64) {
 		ix.data[rel] = size
 		ix.lower[strings.ToLower(rel)] = rel
+		bytes += size
+		progress.Emit(sink, progress.Event{
+			Phase: progress.PhaseIndexing,
+			Done:  int64(len(ix.data)),
+			Bytes: bytes,
+			// The directory rather than the file: at tens of thousands of files
+			// a name changing faster than the eye reads is not information.
+			Detail: dirOf(rel),
+		})
 	}); err != nil {
 		return nil, err
 	}
+	done := int64(len(ix.data))
+	progress.Emit(sink, progress.Event{
+		Phase: progress.PhaseIndexing, Done: done, Total: done, Bytes: bytes,
+	})
 
 	if coreDir == "" {
 		ix.coreByPrefix = true
@@ -112,6 +128,13 @@ func (ix *Index) Lookup(p string) (Location, int64) {
 		return CaseMismatch, ix.data[canonical]
 	}
 	return NotFound, 0
+}
+
+func dirOf(rel string) string {
+	if i := strings.LastIndex(rel, "/"); i >= 0 {
+		return rel[:i]
+	}
+	return ""
 }
 
 func topSegment(p string) string {

@@ -20,7 +20,7 @@ func TestRealInstallHashing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ix, err := scan.Build(inst.Data, "")
+	ix, err := scan.Build(inst.Data, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,7 +27,7 @@ func TestIndexLookup(t *testing.T) {
 	writeFile(t, data, "worlds/w/assets/keep.webp", "xyz")
 	writeFile(t, core, "icons/svg/mystery-man.svg", "core")
 
-	ix, err := Build(data, core)
+	ix, err := Build(data, core, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestIndexSkipsWorldDatabase(t *testing.T) {
 	writeFile(t, data, "worlds/w/data/actors/000001.ldb", "x")
 	writeFile(t, data, "worlds/w/data/scenes/CURRENT", "x")
 
-	ix, err := Build(data, "")
+	ix, err := Build(data, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

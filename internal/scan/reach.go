@@ -6,8 +6,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
+	"github.com/def-gu/fvtt-migrate/internal/progress"
 )
 
 type Class int
@@ -67,7 +69,7 @@ func (s *Summary) Renamed() []string {
 	return out
 }
 
-func Analyze(inv *foundry.Inventory, ix *Index) (*Summary, error) {
+func Analyze(inv *foundry.Inventory, ix *Index, sink progress.Sink) (*Summary, error) {
 	s := &Summary{
 		OrphansByDir: map[string]Bucket{},
 		BrokenByDir:  map[string]int{},
@@ -112,7 +114,7 @@ func Analyze(inv *foundry.Inventory, ix *Index) (*Summary, error) {
 			}
 		}
 	}
-	if err := readWorlds(inv, record); err != nil {
+	if err := readWorlds(inv, record, sink); err != nil {
 		return nil, err
 	}
 	s.UniqueRefs = len(seen)
@@ -122,7 +124,12 @@ func Analyze(inv *foundry.Inventory, ix *Index) (*Summary, error) {
 		packageDirs[string(p.Kind)+"s/"+p.ID] = true
 	}
 
+	classified := int64(0)
 	ix.Each(func(rel string, size int64) {
+		classified++
+		progress.Emit(sink, progress.Event{
+			Phase: progress.PhaseClassifying, Done: classified, Total: int64(ix.Len()),
+		})
 		switch classify(rel, referenced, packageDirs) {
 		case Referenced:
 			s.Referenced.add(size)
@@ -146,6 +153,7 @@ func Analyze(inv *foundry.Inventory, ix *Index) (*Summary, error) {
 
 type unit struct {
 	world      string
+	title      string
 	dir        string
 	collection string
 }
@@ -157,14 +165,18 @@ func units(inv *foundry.Inventory) ([]unit, error) {
 		if err != nil {
 			return nil, err
 		}
+		title := w.Title
+		if title == "" {
+			title = w.ID
+		}
 		for _, c := range collections {
-			out = append(out, unit{world: w.ID, dir: w.Dir, collection: c})
+			out = append(out, unit{world: w.ID, title: title, dir: w.Dir, collection: c})
 		}
 	}
 	return out, nil
 }
 
-func readWorlds(inv *foundry.Inventory, record func(Ref)) error {
+func readWorlds(inv *foundry.Inventory, record func(Ref), sink progress.Sink) error {
 	work, err := units(inv)
 	if err != nil {
 		return err
@@ -173,6 +185,7 @@ func readWorlds(inv *foundry.Inventory, record func(Ref)) error {
 	jobs := make(chan unit)
 	errs := make(chan error, 1)
 	var wg sync.WaitGroup
+	var done atomic.Int64
 
 	for i := 0; i < workers(len(work)); i++ {
 		wg.Add(1)
@@ -188,6 +201,12 @@ func readWorlds(inv *foundry.Inventory, record func(Ref)) error {
 					default:
 					}
 				}
+				progress.Emit(sink, progress.Event{
+					Phase:  progress.PhaseWorlds,
+					Done:   done.Add(1),
+					Total:  int64(len(work)),
+					Detail: u.title + " / " + u.collection,
+				})
 			}
 		}()
 	}

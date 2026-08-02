@@ -12,6 +12,10 @@ import (
 type Phase string
 
 const (
+	PhasePackages     Phase = "packages"
+	PhaseIndexing     Phase = "indexing"
+	PhaseWorlds       Phase = "worlds"
+	PhaseClassifying  Phase = "classifying"
 	PhaseHashing      Phase = "hashing"
 	PhaseNegotiating  Phase = "negotiating"
 	PhaseTransferring Phase = "transferring"

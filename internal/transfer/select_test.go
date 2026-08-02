@@ -36,7 +36,7 @@ func fixture(t *testing.T) (string, *scan.Index, *scan.Summary) {
 		}
 	}
 
-	ix, err := scan.Build(data, "")
+	ix, err := scan.Build(data, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func fixture(t *testing.T) (string, *scan.Index, *scan.Summary) {
 			{Kind: foundry.KindModule, ID: "fetched"},
 			{Kind: foundry.KindModule, ID: "uploaded"},
 		},
-	}, ix)
+	}, ix, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

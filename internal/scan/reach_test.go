@@ -17,7 +17,7 @@ func TestClassification(t *testing.T) {
 	writeFile(t, data, "modules/m/art/never-referenced.png", "cc")
 	writeFile(t, data, "stickers/lonely.png", "d")
 
-	ix, err := Build(data, "")
+	ix, err := Build(data, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestClassification(t *testing.T) {
 		Background: "Карты/used.webp",
 	}}
 
-	s, err := Analyze(inv, ix)
+	s, err := Analyze(inv, ix, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestBrokenAndRenameCorrelation(t *testing.T) {
 	data := t.TempDir()
 	writeFile(t, data, "Карты/present.webm", "aaaa")
 
-	ix, err := Build(data, "")
+	ix, err := Build(data, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestBrokenAndRenameCorrelation(t *testing.T) {
 		Background: "Карты/gone.webp",
 	}}}
 
-	s, err := Analyze(inv, ix)
+	s, err := Analyze(inv, ix, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestRenameCorrelationIgnoresPackageNamespaces(t *testing.T) {
 	data := t.TempDir()
 	writeFile(t, data, "modules/stray.txt", "x")
 
-	ix, err := Build(data, "")
+	ix, err := Build(data, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestRenameCorrelationIgnoresPackageNamespaces(t *testing.T) {
 		Background: "modules/absent/a.webp",
 	}}}
 
-	s, err := Analyze(inv, ix)
+	s, err := Analyze(inv, ix, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -36,11 +36,11 @@ func TestSecretsAreUnreachable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ix, err := scan.Build(data, "")
+	ix, err := scan.Build(data, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum, err := scan.Analyze(&foundry.Inventory{}, ix)
+	sum, err := scan.Analyze(&foundry.Inventory{}, ix, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

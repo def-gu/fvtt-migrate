@@ -234,6 +234,10 @@ func usage() {
 }
 
 func analyse(root, core string) (*foundry.Install, *foundry.Inventory, *scan.Index, *scan.Summary, error) {
+	return analyseWithProgress(root, core, nil)
+}
+
+func analyseWithProgress(root, core string, sink progress.Sink) (*foundry.Install, *foundry.Inventory, *scan.Index, *scan.Summary, error) {
 	inst, err := foundry.Open(root)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -242,16 +246,21 @@ func analyse(root, core string) (*foundry.Install, *foundry.Inventory, *scan.Ind
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	progress.Emit(sink, progress.Event{
+		Phase: progress.PhasePackages,
+		Done:  int64(len(inv.Worlds) + len(inv.Systems) + len(inv.Modules)),
+		Total: int64(len(inv.Worlds) + len(inv.Systems) + len(inv.Modules)),
+	})
 
 	coreDir := ""
 	if core != "" {
 		coreDir = core + "/public"
 	}
-	ix, err := scan.Build(inst.Data, coreDir)
+	ix, err := scan.Build(inst.Data, coreDir, sink)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	sum, err := scan.Analyze(inv, ix)
+	sum, err := scan.Analyze(inv, ix, sink)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -259,7 +268,11 @@ func analyse(root, core string) (*foundry.Install, *foundry.Inventory, *scan.Ind
 }
 
 func runScan(root, core string, limit int, asJSON bool) error {
-	inst, inv, ix, sum, err := analyse(root, core)
+	var sink progress.Sink
+	if !asJSON {
+		sink = progress.Ticker(os.Stderr)
+	}
+	inst, inv, ix, sum, err := analyseWithProgress(root, core, sink)
 	if err != nil {
 		return err
 	}
