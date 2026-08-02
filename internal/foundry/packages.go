@@ -60,6 +60,8 @@ type Package struct {
 	SystemVersion string
 	CoreVersion   string
 	Background    string
+	Description   string
+	LastPlayed    string
 }
 
 type Problem struct {
@@ -122,6 +124,8 @@ type rawManifest struct {
 	SystemVersion laxString `json:"systemVersion"`
 	CoreVersion   laxString `json:"coreVersion"`
 	Background    string    `json:"background"`
+	Description   string    `json:"description"`
+	LastPlayed    string    `json:"lastPlayed"`
 }
 
 var manifestFile = map[Kind]string{
@@ -232,6 +236,8 @@ func ParseManifest(kind Kind, raw []byte) (*Package, error) {
 		SystemVersion:    string(m.SystemVersion),
 		CoreVersion:      string(m.CoreVersion),
 		Background:       m.Background,
+		Description:      m.Description,
+		LastPlayed:       m.LastPlayed,
 	}, nil
 }
 
