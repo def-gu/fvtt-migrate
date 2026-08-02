@@ -11,7 +11,7 @@ import (
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
 	"github.com/def-gu/fvtt-migrate/internal/plan"
 	"github.com/def-gu/fvtt-migrate/internal/progress"
-	"github.com/def-gu/fvtt-migrate/internal/report"
+	"github.com/def-gu/fvtt-migrate/internal/session"
 	"github.com/def-gu/fvtt-migrate/internal/transfer"
 	"github.com/def-gu/fvtt-migrate/internal/upstream"
 	"github.com/def-gu/fvtt-migrate/internal/verify"
@@ -28,13 +28,17 @@ func servePanel(root, core, listen string) error {
 	if !api.LocalOnly(listen) {
 		return fmt.Errorf("the panel has no password, so it is only served on this machine. Use --listen 127.0.0.1:7788")
 	}
-	if _, err := foundry.Open(root); err != nil {
-		return err
+	sess := session.New(core)
+	if root != "" {
+		if _, err := sess.Open(root); err != nil {
+			return err
+		}
 	}
 
 	local := &api.Local{
-		State: func() (*api.State, error) { return panelState(root, core) },
-		Plan:  func(req api.PlanRequest) (*plan.Plan, error) { return panelPlan(root, core, req) },
+		Session: sess,
+		State:   func() (*api.State, error) { return panelState(sess) },
+		Plan:    func(req api.PlanRequest) (*plan.Plan, error) { return panelPlan(sess, req) },
 		Run: func(ctx context.Context, req api.RunRequest, s progress.Sink) (any, error) {
 			return panelRun(ctx, root, core, req, s)
 		},
@@ -54,37 +58,45 @@ func servePanel(root, core, listen string) error {
 	return api.Listener(listen, mux).ListenAndServe()
 }
 
-func panelState(root, core string) (*api.State, error) {
-	inst, inv, ix, sum, err := analyse(root, core)
+func panelState(sess *session.Session) (*api.State, error) {
+	snap, err := sess.Snapshot()
 	if err != nil {
-		return nil, err
+		if snap, err = sess.Read(nil); err != nil {
+			return nil, err
+		}
 	}
+	return &api.State{Root: snap.Install.Root, Targets: targetVersions(snap.Inv), Scan: snap.Scan}, nil
+}
 
+func targetVersions(inv *foundry.Inventory) []string {
 	seen := map[string]bool{}
-	targets := []string{}
+	out := []string{}
 	for _, w := range inv.Worlds {
 		if w.CoreVersion != "" && !seen[w.CoreVersion] {
 			seen[w.CoreVersion] = true
-			targets = append(targets, w.CoreVersion)
+			out = append(out, w.CoreVersion)
 		}
 	}
-	return &api.State{Root: inst.Root, Targets: targets, Scan: report.BuildScan(inst, inv, ix, sum)}, nil
+	return out
 }
 
-func panelPlan(root, core string, req api.PlanRequest) (*plan.Plan, error) {
-	inst, inv, _, sum, err := analyse(root, core)
+// Built from the reading already in memory. Rebuilding a plan is a decision
+// over known facts, and re-walking the disk for every changed option was what
+// made the panel look frozen.
+func panelPlan(sess *session.Session, req api.PlanRequest) (*plan.Plan, error) {
+	snap, err := sess.Snapshot()
 	if err != nil {
 		return nil, err
 	}
 
 	opts := plan.Options{TargetCore: req.TargetCore}
 	if req.CheckUpdates {
-		pkgs := append(append([]foundry.Package{}, inv.Systems...), inv.Modules...)
+		pkgs := append(append([]foundry.Package{}, snap.Inv.Systems...), snap.Inv.Modules...)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		opts.Updates = upstream.New().CheckAll(ctx, pkgs)
 	}
-	return plan.Build(inst, inv, sum, opts), nil
+	return plan.Build(snap.Install, snap.Inv, snap.Summary, opts), nil
 }
 
 func panelRun(ctx context.Context, root, core string, req api.RunRequest, sink progress.Sink) (any, error) {

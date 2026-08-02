@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -10,16 +9,37 @@ import (
 	"github.com/def-gu/fvtt-migrate/internal/plan"
 	"github.com/def-gu/fvtt-migrate/internal/progress"
 	"github.com/def-gu/fvtt-migrate/internal/report"
+	"github.com/def-gu/fvtt-migrate/internal/session"
 	"github.com/def-gu/fvtt-migrate/internal/verify"
 )
 
 const (
-	PathPing   = "/api/ping"
-	PathState  = "/api/state"
-	PathPlan   = "/api/plan"
-	PathRun    = "/api/run"
-	PathVerify = "/api/verify"
+	PathPing      = "/api/ping"
+	PathDetect    = "/api/detect"
+	PathBrowse    = "/api/browse"
+	PathOpen      = "/api/open"
+	PathScan      = "/api/scan"
+	PathInventory = "/api/inventory"
+	PathState     = "/api/state"
+	PathPlan      = "/api/plan"
+	PathRun       = "/api/run"
+	PathVerify    = "/api/verify"
 )
+
+type OpenRequest struct {
+	Root string `json:"root"`
+}
+
+// Chosen tells the welcome screen what it is looking at without doing any of
+// the work: the installation, whether it has been read, and whether Foundry is
+// holding a world open.
+type Chosen struct {
+	Root        string `json:"root"`
+	Scanned     bool   `json:"scanned"`
+	ScannedAt   string `json:"scanned_at,omitempty"`
+	Running     bool   `json:"foundry_running"`
+	ActiveWorld string `json:"active_world,omitempty"`
+}
 
 type PlanRequest struct {
 	TargetCore   string `json:"target_core"`
@@ -48,6 +68,8 @@ type State struct {
 // address by the command that starts it and carries no token, because reaching
 // it already means being at this keyboard.
 type Local struct {
+	Session *session.Session
+
 	State  func() (*State, error)
 	Plan   func(PlanRequest) (*plan.Plan, error)
 	Run    func(context.Context, RunRequest, progress.Sink) (any, error)
@@ -60,10 +82,89 @@ func (l *Local) Routes(mux *http.ServeMux) {
 	mux.HandleFunc(PathPing, func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, map[string]string{"agent": "fvtt-migrate"})
 	})
+	mux.HandleFunc(PathDetect, l.detect)
+	mux.HandleFunc(PathBrowse, l.browse)
+	mux.HandleFunc(PathOpen, l.open)
+	mux.HandleFunc(PathScan, l.scan)
+	mux.HandleFunc(PathInventory, l.inventory)
 	mux.HandleFunc(PathState, l.state)
 	mux.HandleFunc(PathPlan, l.plan)
 	mux.HandleFunc(PathRun, l.run)
 	mux.HandleFunc(PathVerify, l.verify)
+}
+
+func (l *Local) detect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		fail(w, http.StatusMethodNotAllowed, "method", "GET expected")
+		return
+	}
+	writeJSON(w, Detect())
+}
+
+func (l *Local) browse(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		fail(w, http.StatusMethodNotAllowed, "method", "GET expected")
+		return
+	}
+	list, err := Browse(r.URL.Query().Get("path"))
+	if err != nil {
+		fail(w, http.StatusBadRequest, "browse.failed", err.Error())
+		return
+	}
+	writeJSON(w, list)
+}
+
+func (l *Local) open(w http.ResponseWriter, r *http.Request) {
+	var req OpenRequest
+	if !readJSON(w, r) || !decode(w, r, &req) {
+		return
+	}
+	if _, err := l.Session.Open(req.Root); err != nil {
+		fail(w, http.StatusBadRequest, "open.failed", err.Error())
+		return
+	}
+	writeJSON(w, l.chosen())
+}
+
+func (l *Local) inventory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		fail(w, http.StatusMethodNotAllowed, "method", "GET expected")
+		return
+	}
+	snap, err := l.Session.Snapshot()
+	if err != nil {
+		fail(w, http.StatusConflict, "not.scanned", err.Error())
+		return
+	}
+	writeJSON(w, snap.Inventory)
+}
+
+// The scan streams because it walks tens of thousands of files: a request that
+// answers only at the end looks the same as one that has hung.
+func (l *Local) scan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		fail(w, http.StatusMethodNotAllowed, "method", "POST expected")
+		return
+	}
+
+	stream := newStream(w)
+	snap, err := l.Session.Read(stream.sink())
+	if err != nil {
+		stream.finish(nil, err)
+		return
+	}
+	stream.finish(snap.Inventory, nil)
+}
+
+func (l *Local) chosen() Chosen {
+	c := Chosen{Root: l.Session.Root()}
+	if snap, err := l.Session.Snapshot(); err == nil {
+		c.Scanned = true
+		c.ScannedAt = snap.At.Format(time.RFC3339)
+		live := snap.Install.Liveness()
+		c.Running, c.ActiveWorld = live.ServerRunning, live.ActiveWorld
+	}
+	return c
 }
 
 func (l *Local) state(w http.ResponseWriter, r *http.Request) {
@@ -118,32 +219,6 @@ func (l *Local) run(w http.ResponseWriter, r *http.Request) {
 	}
 	defer l.mu.Unlock()
 
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.WriteHeader(http.StatusOK)
-
-	enc := json.NewEncoder(w)
-	flusher, _ := w.(http.Flusher)
-	var mu sync.Mutex
-
-	sink := progress.Throttle(progress.Func(func(v any) {
-		mu.Lock()
-		defer mu.Unlock()
-		enc.Encode(v)
-		if flusher != nil {
-			flusher.Flush()
-		}
-	}), 100*time.Millisecond)
-
-	result, err := l.Run(r.Context(), req, sink)
-
-	mu.Lock()
-	defer mu.Unlock()
-	if err != nil {
-		enc.Encode(map[string]any{"type": "failed", "message": err.Error()})
-	} else {
-		enc.Encode(map[string]any{"type": "result", "result": result})
-	}
-	if flusher != nil {
-		flusher.Flush()
-	}
+	s := newStream(w)
+	s.finish(l.Run(r.Context(), req, s.sink()))
 }
