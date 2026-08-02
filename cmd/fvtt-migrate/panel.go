@@ -11,6 +11,7 @@ import (
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
 	"github.com/def-gu/fvtt-migrate/internal/plan"
 	"github.com/def-gu/fvtt-migrate/internal/progress"
+	"github.com/def-gu/fvtt-migrate/internal/report"
 	"github.com/def-gu/fvtt-migrate/internal/session"
 	"github.com/def-gu/fvtt-migrate/internal/transfer"
 	"github.com/def-gu/fvtt-migrate/internal/upstream"
@@ -69,19 +70,7 @@ func panelState(sess *session.Session) (*api.State, error) {
 			return nil, err
 		}
 	}
-	return &api.State{Root: snap.Install.Root, Targets: targetVersions(snap.Inv), Scan: snap.Scan}, nil
-}
-
-func targetVersions(inv *foundry.Inventory) []string {
-	seen := map[string]bool{}
-	out := []string{}
-	for _, w := range inv.Worlds {
-		if w.CoreVersion != "" && !seen[w.CoreVersion] {
-			seen[w.CoreVersion] = true
-			out = append(out, w.CoreVersion)
-		}
-	}
-	return out
+	return &api.State{Root: snap.Install.Root, Targets: report.TargetVersions(snap.Inv), Scan: snap.Scan}, nil
 }
 
 // Built from the reading already in memory. Rebuilding a plan is a decision
