@@ -2,6 +2,7 @@ package scan
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -162,6 +163,9 @@ func units(inv *foundry.Inventory) ([]unit, error) {
 	var out []unit
 	for _, w := range inv.Worlds {
 		collections, err := foundry.Collections(w.Dir)
+		if os.IsNotExist(err) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
