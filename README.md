@@ -121,12 +121,37 @@ of its own along with the command to run on the other machine.
 fvtt-migrate serve --to /srv/foundry-data --listen 127.0.0.1:7788
 ```
 
-Point the proxy at `127.0.0.1:7788`. In nginx three settings have to change, or
-uploads fail immediately with error 413.
+The receiving side listens on the machine itself and is invisible from outside.
+The only way in is the proxy, and it has to be configured.
+
+The domain is usually taken by Foundry already, so it cannot be pointed at the
+receiving side wholesale. The simplest arrangement gives the receiving side a
+path of its own on the same domain. In Caddy it looks like this, and nothing
+else needs changing.
+
+```caddy
+your.domain {
+	handle_path /migrate/* {
+		reverse_proxy 127.0.0.1:7788
+	}
+	handle {
+		reverse_proxy 127.0.0.1:30000
+	}
+}
+```
+
+`handle_path` strips the prefix, so the receiving side sees ordinary addresses
+and you give the destination with the prefix, `https://your.domain/migrate`.
+
+The other arrangement is a name of its own, such as `migrate.your.domain`,
+pointed at `127.0.0.1:7788` wholesale. The destination then carries no prefix.
+
+In nginx three further settings have to change, or uploads fail immediately with
+error 413.
 
 ```nginx
-location / {
-    proxy_pass http://127.0.0.1:7788;
+location /migrate/ {
+    proxy_pass http://127.0.0.1:7788/;
 
     client_max_body_size 0;
     proxy_request_buffering off;
@@ -135,9 +160,7 @@ location / {
 }
 ```
 
-For Caddy a plain `reverse_proxy 127.0.0.1:7788` is enough.
-
-Port 7788 does not need opening in the firewall. The only way in is the proxy.
+Port 7788 does not need opening in the firewall.
 
 On your own machine set the same key and give the `https` address.
 
