@@ -1,8 +1,6 @@
 package api
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"net"
 	"net/http"
 	"time"
@@ -26,12 +24,6 @@ func LocalOnly(addr string) bool {
 		return true
 	}
 	return net.ParseIP(host).IsLoopback()
-}
-
-func NewToken() string {
-	b := make([]byte, 24)
-	rand.Read(b)
-	return hex.EncodeToString(b)
 }
 
 func Handler(target Target, opts ServeOptions) (http.Handler, error) {

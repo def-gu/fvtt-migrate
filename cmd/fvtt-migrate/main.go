@@ -564,8 +564,15 @@ func tokenFrom(flag string) string {
 }
 
 func runServe(dir, listen, token string) error {
+	stored := false
 	if token == "" {
-		token = api.NewToken()
+		var fresh bool
+		var err error
+		token, fresh, err = api.StoredToken(dir)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "note: the key could not be saved, so the next start will make a new one:", err)
+		}
+		stored = !fresh
 	}
 	local := api.LocalOnly(listen)
 	handler, err := api.Handler(transfer.NewReceiver(dir), api.ServeOptions{Root: dir, Token: token, Panel: local})
@@ -579,7 +586,11 @@ func runServe(dir, listen, token string) error {
 	} else {
 		fmt.Printf("Panel          not served: %s is reachable from elsewhere\n", listen)
 	}
-	fmt.Printf("Token          %s\n\n", token)
+	if stored {
+		fmt.Printf("Token          %s  (the same key as last time)\n\n", token)
+	} else {
+		fmt.Printf("Token          %s\n\n", token)
+	}
 	fmt.Println("On the sending machine:")
 	fmt.Printf("  export FVTT_MIGRATE_TOKEN=%s\n", token)
 	if local {

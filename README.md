@@ -117,6 +117,10 @@ On the server, start the receiving side. It listens on the machine itself, and
 your existing reverse proxy is what faces the internet. It prints an access key
 of its own along with the command to run on the other machine.
 
+The key is remembered and stays the same on later starts, so restarting the
+server does not lock out the sending machine. Your own key can be given in
+`FVTT_MIGRATE_TOKEN`, and it is used instead of the remembered one.
+
 ```
 fvtt-migrate serve --to /srv/foundry-data --listen 127.0.0.1:7788
 ```
