@@ -3,7 +3,7 @@ import type { Inventory, Plan, VerifyResult } from "./contract";
 import * as api from "./api";
 import { WelcomeScreen } from "./screens/Welcome";
 import { ScanningScreen } from "./screens/Scanning";
-import { PlanScreen } from "./screens/Plan";
+import { TabsScreen } from "./screens/Tabs";
 import { TransferScreen } from "./screens/Transfer";
 import { VerifyScreen } from "./screens/Verify";
 
@@ -48,9 +48,9 @@ export function App() {
       <div className="screen">
         <div className="kicker">{root}</div>
         <h1>Не удалось прочитать установку</h1>
-        <p className="error">{error}</p>
+        <p className="lead verdict-bad">{error}</p>
         <button
-          className="button"
+          className="btn btn-primary"
           onClick={() => {
             setError("");
             setStage("welcome");
@@ -94,7 +94,7 @@ export function App() {
           Программа прочитала {inventory.root} и не нашла там ни одного мира. Настоящие
           данные Foundry могут лежать на другом диске.
         </p>
-        <button className="button" onClick={() => setStage("welcome")}>
+        <button className="btn btn-primary" onClick={() => setStage("welcome")}>
           Выбрать другую папку
         </button>
       </div>
@@ -106,14 +106,15 @@ export function App() {
       <nav className="nav">
         <span className="nav-brand">Перенос установки Foundry</span>
         <span className="nav-root">{inventory.root}</span>
-        <button className="button button-quiet" onClick={() => setStage("welcome")}>
+        <button className="btn btn-secondary" onClick={() => setStage("welcome")}>
           Другая установка
         </button>
       </nav>
 
       <main>
         {stage === "plan" && (
-          <PlanScreen
+          <TabsScreen
+            inventory={inventory}
             state={state}
             plan={plan}
             dest={dest}

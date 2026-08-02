@@ -41,3 +41,17 @@ export function shortPath(p: string, max = 56): string {
   if (chars.length <= max) return p;
   return "…" + chars.slice(chars.length - max + 1).join("");
 }
+
+// World descriptions are stored as HTML. The panel shows them as text rather
+// than rendering markup it did not write.
+export function plain(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}

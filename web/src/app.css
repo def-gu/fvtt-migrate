@@ -512,3 +512,81 @@
 .browser-item-found {
   color: var(--color-accent);
 }
+
+.tab-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.cards {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.card-blocked {
+  opacity: 0.72;
+}
+
+.pairs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  font-size: 13px;
+  margin-bottom: var(--space-3);
+}
+
+.pair-key {
+  color: var(--color-neutral-400);
+}
+
+.pair-value {
+  word-break: break-word;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.chip {
+  font-size: 12px;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-neutral-900);
+  color: var(--color-neutral-300);
+}
+
+.chip-missing {
+  background: var(--color-accent-2-800);
+  color: var(--color-accent-2-100);
+  text-decoration: line-through;
+}
+
+.nav-tabs-wide {
+  border-bottom: 1px solid var(--color-divider);
+  margin-bottom: var(--space-5);
+}
+
+.tab-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* A tab may render a whole screen of its own; the outer padding is enough. */
+.screen .screen {
+  max-width: none;
+  padding: 0;
+}
