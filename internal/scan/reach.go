@@ -1,8 +1,11 @@
 package scan
 
 import (
+	"fmt"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/def-gu/fvtt-migrate/internal/foundry"
 )
@@ -75,7 +78,10 @@ func Analyze(inv *foundry.Inventory, ix *Index) (*Summary, error) {
 	caseIssues := map[string]*Missing{}
 	seen := map[string]bool{}
 
+	var mu sync.Mutex
 	record := func(r Ref) {
+		mu.Lock()
+		defer mu.Unlock()
 		if !seen[r.Path] {
 			seen[r.Path] = true
 			switch loc, _ := ix.Lookup(r.Path); loc {
@@ -105,12 +111,9 @@ func Analyze(inv *foundry.Inventory, ix *Index) (*Summary, error) {
 				record(Ref{Path: p, Where: "world.json:background"})
 			}
 		}
-		err := foundry.EachDocument(w.Dir, func(d foundry.Document) error {
-			return FromDocument(d.Data, record)
-		})
-		if err != nil {
-			return nil, err
-		}
+	}
+	if err := readWorlds(inv, record); err != nil {
+		return nil, err
 	}
 	s.UniqueRefs = len(seen)
 
@@ -139,6 +142,79 @@ func Analyze(inv *foundry.Inventory, ix *Index) (*Summary, error) {
 	s.Broken = sortMissing(broken)
 	s.CaseIssues = sortMissing(caseIssues)
 	return s, nil
+}
+
+type unit struct {
+	world      string
+	dir        string
+	collection string
+}
+
+func units(inv *foundry.Inventory) ([]unit, error) {
+	var out []unit
+	for _, w := range inv.Worlds {
+		collections, err := foundry.Collections(w.Dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range collections {
+			out = append(out, unit{world: w.ID, dir: w.Dir, collection: c})
+		}
+	}
+	return out, nil
+}
+
+func readWorlds(inv *foundry.Inventory, record func(Ref)) error {
+	work, err := units(inv)
+	if err != nil {
+		return err
+	}
+
+	jobs := make(chan unit)
+	errs := make(chan error, 1)
+	var wg sync.WaitGroup
+
+	for i := 0; i < workers(len(work)); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for u := range jobs {
+				err := foundry.EachInCollection(u.dir, u.collection, func(d foundry.Document) error {
+					return FromDocument(d.Data, record)
+				})
+				if err != nil {
+					select {
+					case errs <- fmt.Errorf("%s/%s: %w", u.world, u.collection, err):
+					default:
+					}
+				}
+			}
+		}()
+	}
+
+	for _, u := range work {
+		jobs <- u
+	}
+	close(jobs)
+	wg.Wait()
+
+	select {
+	case err := <-errs:
+		return err
+	default:
+		return nil
+	}
+}
+
+func workers(jobs int) int {
+	n := runtime.NumCPU()
+	if n > jobs {
+		n = jobs
+	}
+	if n < 1 {
+		n = 1
+	}
+	return n
 }
 
 func classify(rel string, referenced map[string]bool, packageDirs map[string]bool) Class {

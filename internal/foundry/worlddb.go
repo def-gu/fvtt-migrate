@@ -20,24 +20,41 @@ type Document struct {
 // fog stores explored-area bitmaps as data URIs and never references a file.
 var skipCollections = map[string]bool{"fog": true}
 
+// Collections are separate databases, which is what makes a world readable by
+// several workers at once.
+func Collections(worldDir string) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(worldDir, "data"))
+	if err != nil {
+		return nil, err
+	}
+
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() && !skipCollections[e.Name()] {
+			out = append(out, e.Name())
+		}
+	}
+	return out, nil
+}
+
 // Embedded documents live under keys of the form !scenes.tokens!<id>.<id> and
 // are walked too. Data is only valid for the duration of the callback.
 func EachDocument(worldDir string, fn func(Document) error) error {
-	dataDir := filepath.Join(worldDir, "data")
-	entries, err := os.ReadDir(dataDir)
+	collections, err := Collections(worldDir)
 	if err != nil {
 		return err
 	}
 
-	for _, e := range entries {
-		if !e.IsDir() || skipCollections[e.Name()] {
-			continue
-		}
-		if err := eachInCollection(filepath.Join(dataDir, e.Name()), e.Name(), fn); err != nil {
+	for _, c := range collections {
+		if err := EachInCollection(worldDir, c, fn); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func EachInCollection(worldDir, collection string, fn func(Document) error) error {
+	return eachInCollection(filepath.Join(worldDir, "data", collection), collection, fn)
 }
 
 func eachInCollection(dir, collection string, fn func(Document) error) error {
