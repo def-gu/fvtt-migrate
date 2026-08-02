@@ -93,3 +93,19 @@ func splitKey(raw string) (namespace, key string) {
 	}
 	return rest[:i], rest[i+1:]
 }
+
+// The world database is excluded from the asset index, so its size has to be
+// measured separately or a world appears to weigh almost nothing.
+func DatabaseSize(worldDir string) (files int, bytes int64) {
+	filepath.WalkDir(filepath.Join(worldDir, "data"), func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, err := d.Info(); err == nil {
+			files++
+			bytes += info.Size()
+		}
+		return nil
+	})
+	return files, bytes
+}

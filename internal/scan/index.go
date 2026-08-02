@@ -144,6 +144,27 @@ func topSegment(p string) string {
 	return p
 }
 
+// Sizes groups the index by the first depth path segments, which is what turns
+// a flat file list into per package and per directory totals.
+func (ix *Index) Sizes(depth int) map[string]Bucket {
+	out := map[string]Bucket{}
+	for rel, size := range ix.data {
+		key := rel
+		for i, n := 0, 0; i < len(rel); i++ {
+			if rel[i] == '/' {
+				if n++; n == depth {
+					key = rel[:i]
+					break
+				}
+			}
+		}
+		b := out[key]
+		b.add(size)
+		out[key] = b
+	}
+	return out
+}
+
 func (ix *Index) Each(fn func(rel string, size int64)) {
 	for rel, size := range ix.data {
 		fn(rel, size)
