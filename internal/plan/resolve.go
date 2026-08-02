@@ -63,6 +63,11 @@ type Options struct {
 	ObservedCore string
 	Cache        Cache
 	Updates      map[string]upstream.Result
+
+	// A package is only left for the far side to download when the far side has
+	// said it downloads. Assuming it does produced installations whose systems
+	// and modules were never sent and never fetched, so no world would open.
+	TargetFetches bool
 }
 
 func ResolvePackages(inv *foundry.Inventory, opts Options) []Package {
@@ -129,6 +134,9 @@ func chooseSource(p foundry.Package, premium bool, opts Options, update upstream
 
 	if opts.Cache != nil && opts.Cache.Has(string(p.Kind), p.ID, p.Version) {
 		return FromCache, ""
+	}
+	if !opts.TargetFetches {
+		return FromUpload, "the target does not download packages by itself"
 	}
 	if p.Version == "" {
 		return FromUpload, "manifest declares no version"

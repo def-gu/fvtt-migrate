@@ -43,7 +43,11 @@ func TestResolveSources(t *testing.T) {
 		module("cached", "3.1.0", str("https://x/module.json"), "https://x/v3.1.0/cached.zip"),
 	}}
 
-	got := ResolvePackages(inv, Options{TargetCore: "13.351", Cache: fakeCache{"module/cached@3.1.0": true}})
+	got := ResolvePackages(inv, Options{
+		TargetCore:    "13.351",
+		Cache:         fakeCache{"module/cached@3.1.0": true},
+		TargetFetches: true,
+	})
 
 	cases := []struct {
 		id      string
@@ -99,5 +103,27 @@ func TestCompatVerdictFlows(t *testing.T) {
 
 	if got := ResolvePackages(inv, Options{TargetCore: "13.351"})[0].CompatDeclared; got != "untested" {
 		t.Errorf("compat = %q, want untested", got)
+	}
+}
+
+// The far side stores what it is sent and downloads nothing. Leaving a package
+// for it to fetch produced installations with no systems, where no world opened.
+func TestEveryPackageTravelsUnlessTheTargetFetches(t *testing.T) {
+	inv := &foundry.Inventory{
+		Systems: []foundry.Package{
+			{Kind: foundry.KindSystem, ID: "pf2e", Version: "7.12.2",
+				DeclaresManifest: true, Manifest: "https://x/system.json",
+				Download: "https://x/releases/download/7.12.2/pf2e.zip"},
+		},
+		Modules: []foundry.Package{
+			module("lib-wrapper", "1.13.5.1", str("https://x/releases/latest/download/module.json"),
+				"https://x/releases/download/v1.13.5.1/lib-wrapper-v1.13.5.1.zip"),
+		},
+	}
+
+	for _, p := range ResolvePackages(inv, Options{TargetCore: "13.351"}) {
+		if p.Source != FromUpload {
+			t.Errorf("%s: source = %q, want %q", p.ID, p.Source, FromUpload)
+		}
 	}
 }
