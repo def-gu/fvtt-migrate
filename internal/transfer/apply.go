@@ -81,18 +81,48 @@ func Apply(ctx context.Context, sourceRoot string, sel Selection, digests map[st
 		return prog, err
 	}
 
-	for _, rel := range sel.Paths {
-		if err := tgt.Place(ctx, digests[rel].Digest, rel); err != nil {
-			return prog, fmt.Errorf("place %s: %w", rel, err)
-		}
-		prog.Placed++
+	if err := placeAll(ctx, sel.Paths, digests, tgt, opts, prog); err != nil {
+		return prog, err
+	}
+	return prog, tgt.Commit(ctx)
+}
+
+const placeBatch = 2000
+
+func placeAll(ctx context.Context, paths []string, digests map[string]content.Entry, tgt Target, opts Options, prog *Progress) error {
+	report := func() {
 		progress.Emit(opts.Sink, progress.Event{
 			Phase: progress.PhasePlacing,
 			Done:  int64(prog.Placed),
-			Total: int64(len(sel.Paths)),
+			Total: int64(len(paths)),
 		})
 	}
-	return prog, tgt.Commit(ctx)
+
+	batcher, batched := tgt.(BatchPlacer)
+	if !batched {
+		for _, rel := range paths {
+			if err := tgt.Place(ctx, digests[rel].Digest, rel); err != nil {
+				return fmt.Errorf("place %s: %w", rel, err)
+			}
+			prog.Placed++
+			report()
+		}
+		return nil
+	}
+
+	for start := 0; start < len(paths); start += placeBatch {
+		end := min(start+placeBatch, len(paths))
+		entries := make([]content.Placement, 0, end-start)
+		for _, rel := range paths[start:end] {
+			entries = append(entries, content.Placement{Digest: digests[rel].Digest, Path: rel})
+		}
+		if err := batcher.PlaceMany(ctx, entries); err != nil {
+			return fmt.Errorf("place %d files starting at %s: %w", len(entries), paths[start], err)
+		}
+		prog.Placed += len(entries)
+		report()
+	}
+	return nil
 }
 
 func uploadAll(ctx context.Context, root string, missing []content.Digest, byDigest map[content.Digest]content.Entry, tgt Target, opts Options, prog *Progress) error {

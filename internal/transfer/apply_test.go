@@ -2,6 +2,8 @@ package transfer
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -151,4 +153,69 @@ func mustOpen(t *testing.T, root, rel string) *os.File {
 	}
 	t.Cleanup(func() { f.Close() })
 	return f
+}
+
+// A target that only offers Place must still be laid out correctly, and a
+// target that batches must produce the same tree in far fewer calls.
+type countingTarget struct {
+	*FileTarget
+	single, batches int
+	batching        bool
+}
+
+func (c *countingTarget) Place(ctx context.Context, d content.Digest, rel string) error {
+	c.single++
+	return c.FileTarget.Place(ctx, d, rel)
+}
+
+func (c *countingTarget) PlaceMany(ctx context.Context, entries []content.Placement) error {
+	if !c.batching {
+		return errors.New("this target does not batch")
+	}
+	c.batches++
+	for _, e := range entries {
+		if err := c.FileTarget.Place(ctx, e.Digest, e.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestApplyBatchesPlacementWhenTheTargetCan(t *testing.T) {
+	ctx := context.Background()
+	files := map[string]string{}
+	for i := 0; i < 2100; i++ {
+		files[fmt.Sprintf("Карты/%04d.webp", i)] = fmt.Sprintf("tile %d", i)
+	}
+	root, digests, sel := source(t, files)
+
+	batching := &countingTarget{FileTarget: NewFileTarget(t.TempDir()), batching: true}
+	if _, err := Apply(ctx, root, sel, digests, batching, Options{Workers: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if batching.single != 0 {
+		t.Errorf("a batching target still received %d single calls", batching.single)
+	}
+	if batching.batches != 2 {
+		t.Errorf("batches = %d, want 2 for 2100 files", batching.batches)
+	}
+
+	plain := NewFileTarget(t.TempDir())
+	if _, err := Apply(ctx, root, sel, digests, plain, Options{Workers: 2}); err != nil {
+		t.Fatal(err)
+	}
+
+	for rel := range files {
+		batched, err := os.ReadFile(filepath.Join(batching.Root, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("%s missing after a batched run: %v", rel, err)
+		}
+		one, err := os.ReadFile(filepath.Join(plain.Root, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(batched) != string(one) {
+			t.Fatalf("%s differs between a batched and a one by one run", rel)
+		}
+	}
 }

@@ -174,6 +174,15 @@ func (t *FileTarget) Place(_ context.Context, d content.Digest, rel string) erro
 	return nil
 }
 
+func (t *FileTarget) PlaceMany(ctx context.Context, entries []content.Placement) error {
+	for _, e := range entries {
+		if err := t.Place(ctx, e.Digest, e.Path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (t *FileTarget) remember(d content.Digest, rel, abs string) {
 	if t.index == nil {
 		return

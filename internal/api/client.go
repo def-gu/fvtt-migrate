@@ -20,6 +20,8 @@ type Client struct {
 	Base  string
 	Token string
 	HTTP  *http.Client
+
+	placeMany bool
 }
 
 func NewClient(base, token string) *Client {
@@ -64,6 +66,11 @@ func (t *Client) Hello(ctx context.Context) (*Hello, error) {
 	for _, c := range h.Capabilities {
 		if !known[c] {
 			unknown = append(unknown, c)
+		}
+	}
+	for _, c := range h.Capabilities {
+		if c == CapPlaceMany {
+			t.placeMany = true
 		}
 	}
 	if len(unknown) > 0 {
@@ -118,6 +125,18 @@ func (t *Transient) Unwrap() error { return t.Err }
 func (t *Client) Place(ctx context.Context, d content.Digest, rel string) error {
 	return t.call(ctx, http.MethodPost, PathPlace, PlaceRequest{Digest: d, Path: rel}, nil)
 }
+
+func (t *Client) PlaceMany(ctx context.Context, entries []content.Placement) error {
+	req := PlaceManyRequest{Entries: make([]PlaceRequest, 0, len(entries))}
+	for _, e := range entries {
+		req.Entries = append(req.Entries, PlaceRequest{Digest: e.Digest, Path: e.Path})
+	}
+	return t.call(ctx, http.MethodPost, PathPlaceMany, req, nil)
+}
+
+// Batching is only used against a side that said it understands it, so an older
+// receiver keeps working one file at a time.
+func (t *Client) BatchesPlacement() bool { return t.placeMany }
 
 func (t *Client) Commit(ctx context.Context) error {
 	return t.call(ctx, http.MethodPost, PathCommit, nil, nil)

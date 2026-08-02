@@ -115,3 +115,9 @@ func report(sink progress.Sink, res *Result, mu *sync.Mutex, total int) {
 	mu.Unlock()
 	progress.Emit(sink, progress.Event{Phase: progress.PhaseHashing, Done: done, Total: int64(total)})
 }
+
+// Placement names a file the target should create from a blob it holds.
+type Placement struct {
+	Digest Digest
+	Path   string
+}

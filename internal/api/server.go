@@ -34,6 +34,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc(PathMissing, s.guard(s.missing))
 	mux.HandleFunc(PathBlob, s.guard(s.blob))
 	mux.HandleFunc(PathPlace, s.guard(s.place))
+	mux.HandleFunc(PathPlaceMany, s.guard(s.placeMany))
 	mux.HandleFunc(PathCommit, s.guard(s.commit))
 	mux.HandleFunc(PathWorlds, s.guard(s.worlds))
 }
@@ -107,6 +108,24 @@ func (s *Server) place(w http.ResponseWriter, r *http.Request) {
 		}
 		fail(w, http.StatusBadRequest, code, err.Error())
 		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) placeMany(w http.ResponseWriter, r *http.Request) {
+	var req PlaceManyRequest
+	if !readJSON(w, r) || !decode(w, r, &req) {
+		return
+	}
+	for _, e := range req.Entries {
+		if err := s.Target.Place(r.Context(), e.Digest, e.Path); err != nil {
+			code := "place.failed"
+			if strings.Contains(err.Error(), "unsafe path") {
+				code = "path.unsafe"
+			}
+			fail(w, http.StatusBadRequest, code, err.Error())
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

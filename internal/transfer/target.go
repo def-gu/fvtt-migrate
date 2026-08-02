@@ -13,3 +13,10 @@ type Target interface {
 	Place(ctx context.Context, d content.Digest, rel string) error
 	Commit(ctx context.Context) error
 }
+
+// A target over the network spends a round trip per call, and an installation
+// has tens of thousands of files. Laying them out in batches turns hours of
+// latency into seconds.
+type BatchPlacer interface {
+	PlaceMany(ctx context.Context, entries []content.Placement) error
+}
