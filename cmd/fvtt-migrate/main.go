@@ -63,14 +63,13 @@ func main() {
 		usage()
 	}
 	if cmd == "panel" {
+		// Finding nothing is not a failure: the panel asks which directory to
+		// read, and an installation on a second drive is the ordinary case.
 		at := *root
 		if at == "" {
-			inst, err := foundry.Discover()
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "error: no Foundry installation found; pass --root")
-				os.Exit(1)
+			if inst, err := foundry.Discover(); err == nil {
+				at = inst.Root
 			}
-			at = inst.Root
 		}
 		if err := runPanel(at, *core, *listen); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)

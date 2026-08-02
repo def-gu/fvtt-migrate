@@ -18,7 +18,11 @@ import (
 )
 
 func runPanel(root, core, listen string) error {
-	fmt.Printf("Installation   %s\n", root)
+	if root == "" {
+		fmt.Println("Installation   none found, choose one in the panel")
+	} else {
+		fmt.Printf("Installation   %s\n", root)
+	}
 	fmt.Printf("Panel          http://%s/\n\n", listen)
 	fmt.Println("Open that address in a browser. Close this window to stop.")
 	return servePanel(root, core, listen)
