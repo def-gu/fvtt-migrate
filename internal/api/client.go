@@ -58,25 +58,17 @@ func (t *Client) Hello(ctx context.Context) (*Hello, error) {
 		return nil, fmt.Errorf("%s is answering, but it is not a receiving side", t.Base)
 	}
 
-	known := map[string]bool{}
-	for _, c := range Capabilities {
-		known[c] = true
-	}
-	var unknown []string
+	// A capability names something the far side can do, so one this version has
+	// never heard of is ignored rather than refused. Refusing turned every
+	// addition on the receiving side into a break for every older sender.
+	speaks := map[string]bool{}
 	for _, c := range h.Capabilities {
-		if !known[c] {
-			unknown = append(unknown, c)
-		}
+		speaks[c] = true
 	}
-	for _, c := range h.Capabilities {
-		if c == CapPlaceMany {
-			t.placeMany = true
-		}
+	if !speaks[CapBase] {
+		return nil, fmt.Errorf("%s answers as a receiving side but does not speak %s", t.Base, CapBase)
 	}
-	if len(unknown) > 0 {
-		return nil, fmt.Errorf("the receiving side speaks %s, which this version does not. Update fvtt-migrate on this machine",
-			strings.Join(unknown, ", "))
-	}
+	t.placeMany = speaks[CapPlaceMany]
 	return &h, nil
 }
 

@@ -12,9 +12,12 @@ const (
 	PathWorlds    = "/v1/worlds"
 )
 
-const CapPlaceMany = "transfer/place-many"
+const (
+	CapBase      = "target/1"
+	CapPlaceMany = "transfer/place-many"
+)
 
-var Capabilities = []string{"target/1", "digest/blake3-256", "transfer/whole-file", CapPlaceMany}
+var Capabilities = []string{CapBase, "digest/blake3-256", "transfer/whole-file", CapPlaceMany}
 
 type Hello struct {
 	Agent        string   `json:"agent"`
