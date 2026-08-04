@@ -140,12 +140,14 @@ func Build(inst *foundry.Install, inv *foundry.Inventory, sum *scan.Summary, opt
 			TargetCore:  targetCore,
 			PackageMode: PolicyPin,
 		},
+		Worlds:   []World{},
 		Packages: ResolvePackages(inv, opts),
 		Assets: Assets{
-			Referenced: Bucket{sum.Referenced.Files, sum.Referenced.Bytes},
-			Packaged:   Bucket{sum.Packaged.Files, sum.Packaged.Bytes},
-			BrokenRefs: len(sum.Broken),
-			CaseOnly:   len(sum.CaseIssues),
+			Referenced:  Bucket{sum.Referenced.Files, sum.Referenced.Bytes},
+			Packaged:    Bucket{sum.Packaged.Files, sum.Packaged.Bytes},
+			BrokenRefs:  len(sum.Broken),
+			CaseOnly:    len(sum.CaseIssues),
+			Directories: []Directory{},
 		},
 	}
 

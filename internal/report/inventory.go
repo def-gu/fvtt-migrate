@@ -65,7 +65,12 @@ func BuildInventory(inst *foundry.Install, inv *foundry.Inventory, ix *scan.Inde
 		installed[p.ID] = true
 	}
 
-	out := &Inventory{Root: inst.Root}
+	out := &Inventory{
+		Root:    inst.Root,
+		Worlds:  []InventoryWorld{},
+		Systems: []InventoryPackage{},
+		Modules: []InventoryPackage{},
+	}
 	enabledIn := map[string][]string{}
 	worldsBySystem := map[string][]string{}
 
@@ -99,8 +104,8 @@ func BuildInventory(inst *foundry.Install, inv *foundry.Inventory, ix *scan.Inde
 			CoreVersion:     w.CoreVersion,
 			LastPlayed:      w.LastPlayed,
 			Size:            size,
-			ActiveModules:   active,
-			MissingModules:  missing,
+			ActiveModules:   list(active),
+			MissingModules:  list(missing),
 		})
 	}
 
@@ -113,13 +118,13 @@ func BuildInventory(inst *foundry.Install, inv *foundry.Inventory, ix *scan.Inde
 
 	for _, s := range inv.Systems {
 		p := describe(s, "systems/"+s.ID, sizes, installed)
-		p.UsedByWorlds = worldsBySystem[s.ID]
+		p.UsedByWorlds = list(worldsBySystem[s.ID])
 		p.ModuleCount = modulesPerSystem[s.ID]
 		out.Systems = append(out.Systems, p)
 	}
 	for _, m := range inv.Modules {
 		p := describe(m, "modules/"+m.ID, sizes, installed)
-		p.UsedByWorlds = enabledIn[m.ID]
+		p.UsedByWorlds = list(enabledIn[m.ID])
 		out.Modules = append(out.Modules, p)
 	}
 
@@ -145,17 +150,27 @@ func describe(p foundry.Package, path string, sizes map[string]scan.Bucket, inst
 		Title:         title,
 		Version:       p.Version,
 		Path:          path,
-		Authors:       p.Authors,
+		Authors:       list(p.Authors),
 		Delivery:      string(p.Delivery),
 		Manifest:      p.Manifest,
 		Verified:      p.Compat.Verified,
 		Minimum:       p.Compat.Minimum,
 		Maximum:       p.Compat.Maximum,
 		Size:          sizeOf(sizes, path),
-		TargetSystems: p.TargetSystems,
-		Requires:      p.Requires,
-		Missing:       missing,
+		TargetSystems: list(p.TargetSystems),
+		Requires:      list(p.Requires),
+		Missing:       list(missing),
+		UsedByWorlds:  []string{},
 	}
+}
+
+// A nil slice encodes as null, which is not a list. The panel reads these as
+// lists and stops rendering the moment it is handed one.
+func list(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func titleOr(p foundry.Package) string {
@@ -170,6 +185,6 @@ func sizeOf(sizes map[string]scan.Bucket, key string) Size {
 	return Size{Files: b.Files, Bytes: b.Bytes}
 }
 
-func sortByTitle(list []InventoryPackage) {
-	sort.Slice(list, func(i, j int) bool { return list[i].Title < list[j].Title })
+func sortByTitle(pkgs []InventoryPackage) {
+	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].Title < pkgs[j].Title })
 }
